@@ -492,6 +492,10 @@ local function LegacyParams()
                 OnCommand = TextBannerMetric(type .. "OnCommand")
             }
     end
+
+    -- The wheel item width for song rows
+    local wheelItemWidth = 560
+
     params.songActorBuilder = function()
         local x = {}
         local t =
@@ -499,22 +503,84 @@ local function LegacyParams()
             InitCommand = function(self)
                 x.actor = self
             end,
-            Def.ActorFrame {
+            -- Background bar for each item
+            Def.Quad {
+                Name = "BG",
                 InitCommand = function(self)
-                    self:xy(MusicWheelItemMetric("SongNameX"), MusicWheelItemMetric("SongNameY"))
+                    self:zoomto(wheelItemWidth, 50):diffuse(color("#000000")):diffusealpha(0.7)
                 end,
-                OnCommand = MusicWheelItemMetric("SongNameOnCommand"),
-                TextBannerFont("Title", x),
-                TextBannerFont("Subtitle", x),
-                TextBannerFont("Artist", x)
+                SetDynamicAccentColorMessageCommand = function(self, params)
+                    self:finishtweening():linear(0.15):diffuse(params.color):diffusealpha(0.25)
+                end
             },
-            loadMusicWheelItemThingActor("grades") ..
-                {
-                    BeginCommand = function(self)
-                        self:xy(MusicWheelItemMetric("GradeP1X"), MusicWheelItemMetric("GradeP1Y"))
-                        x.actor.grades = self
-                    end
-                }
+            -- Top separator line
+            Def.Quad {
+                Name = "TopLine",
+                InitCommand = function(self)
+                    self:y(-25):zoomto(wheelItemWidth, 1):diffuse(color("#333333")):diffusealpha(0.5)
+                end
+            },
+            -- Title (bold, left-aligned)
+            LoadFont("Common Large") .. {
+                Name = "Title",
+                InitCommand = function(self)
+                    self:xy(-wheelItemWidth/2 + 10, -10):zoom(0.35):halign(0):valign(0.5)
+                    self:maxwidth((wheelItemWidth * 0.6) / 0.35)
+                end,
+                BeginCommand = function(self)
+                    x.actor.Title = self
+                end
+            },
+            -- Artist + Difficulty (smaller, on same line as title)
+            LoadFont("Common Normal") .. {
+                Name = "Artist",
+                InitCommand = function(self)
+                    self:xy(-wheelItemWidth/2 + 10, 3):zoom(0.3):halign(0):valign(0.5):diffuse(color("#CCCCCC"))
+                    self:maxwidth((wheelItemWidth * 0.55) / 0.3)
+                end,
+                BeginCommand = function(self)
+                    x.actor.Artist = self
+                end
+            },
+            -- Subtitle / description (smallest, below)
+            LoadFont("Common Normal") .. {
+                Name = "Subtitle",
+                InitCommand = function(self)
+                    self:xy(-wheelItemWidth/2 + 10, 16):zoom(0.25):halign(0):valign(0.5):diffuse(color("#888888"))
+                    self:maxwidth((wheelItemWidth * 0.65) / 0.25)
+                end,
+                BeginCommand = function(self)
+                    x.actor.Subtitle = self
+                end
+            },
+            -- Pack name (far right)
+            LoadFont("Common Normal") .. {
+                Name = "PackName",
+                InitCommand = function(self)
+                    self:xy(wheelItemWidth/2 - 10, -10):zoom(0.3):halign(1):valign(0.5):diffuse(color("#AAAAAA"))
+                    self:maxwidth(150 / 0.3)
+                end,
+                BeginCommand = function(self)
+                    x.actor.PackName = self
+                end
+            },
+            -- Grade display (right half)
+            loadMusicWheelItemThingActor("grades") .. {
+                BeginCommand = function(self)
+                    self:xy(wheelItemWidth/2 - 120, 0):zoom(0.7)
+                    x.actor.grades = self
+                end
+            },
+            -- ClearType text (right of grade)
+            LoadFont("Common Normal") .. {
+                Name = "ClearType",
+                InitCommand = function(self)
+                    self:xy(wheelItemWidth/2 - 50, 0):zoom(0.35):halign(0.5):valign(0.5)
+                end,
+                BeginCommand = function(self)
+                    x.actor.ClearType = self
+                end
+            }
         }
         return t
     end
@@ -524,21 +590,25 @@ local function LegacyParams()
             Def.ActorFrame {
             InitCommand = function(self)
                 g.actor = self
-            end
+            end,
+            -- Background bar for pack headers
+            Def.Quad {
+                Name = "BG",
+                InitCommand = function(self)
+                    self:zoomto(wheelItemWidth, 50):diffuse(color("#000000")):diffusealpha(0.7)
+                end,
+                SetDynamicAccentColorMessageCommand = function(self, params)
+                    self:finishtweening():linear(0.15):diffuse(params.color):diffusealpha(0.25)
+                end
+            },
+            -- Top separator line
+            Def.Quad {
+                Name = "TopLine",
+                InitCommand = function(self)
+                    self:y(-25):zoomto(wheelItemWidth, 1):diffuse(color("#333333")):diffusealpha(0.5)
+                end
+            },
         }
-        --[[
-        for i, v in pairs(wheelItemTypes) do
-            if v ~= "Song" then
-                g[#g + 1] =
-                    loadMusicWheelItemTypeFontLegacyActor(v) ..
-                    {
-                        BeginCommand = function(self)
-                            g.actor[v] = self
-                        end
-                    }
-            end
-        end
-        --]]
         g[#g + 1] =
             loadMusicWheelItemTypeFontLegacyActor("SectionCollapsed") ..
             {
@@ -560,22 +630,69 @@ local function LegacyParams()
         return g
     end
     params.songActorUpdater = function(self, song)
+        -- Title
         self.Title:settext(song:GetDisplayMainTitle())
-        self.Subtitle:settext(song:GetDisplaySubTitle())
-        self.Artist:settext(song:GetDisplayArtist())
-        self:diffuse(SONGMAN:GetSongColor(song))
-        -- TODO: grade params
+        -- Artist + Difficulty on same line
+        local artist = song:GetDisplayArtist()
+        local diff = ""
+        local steps = GAMESTATE:GetCurrentSteps()
+        if steps then
+            diff = steps:GetDifficulty():gsub("Difficulty_", "")
+        end
+        if artist ~= "" and diff ~= "" then
+            self.Artist:settext(artist .. " · " .. diff)
+        elseif artist ~= "" then
+            self.Artist:settext(artist)
+        else
+            self.Artist:settext(diff)
+        end
+        -- Subtitle / chart description
+        local sub = song:GetDisplaySubTitle()
+        self.Subtitle:settext(sub)
+        -- Pack name on far right
+        self.PackName:settext(song:GetGroupName())
+
+        self:diffuse(color("#FFFFFF"))
+
+        -- Grade and ClearType
+        local grade = song:GetTopGrade(steps, PLAYER_1)
         self.grades:playcommand(
             "SetGrade",
             {
-                Grade = nil, --"Grade_None"
-                Difficulty = "Beginner",
+                Grade = grade,
+                Difficulty = steps and steps:GetDifficulty() or "Beginner",
                 HasGoal = false,
                 Favorited = song:IsFavorited(),
                 PermaMirror = false,
                 PlayerNumber = PLAYER_1
             }
         )
+
+        -- ClearType from best score
+        if steps then
+            local chartKey = steps:GetChartKey()
+            local scoresByRate = SCOREMAN:GetScoresByKey(chartKey)
+            if scoresByRate then
+                local bestScore = nil
+                for _, scores in pairs(scoresByRate) do
+                    for _, s in ipairs(scores) do
+                        if bestScore == nil or s:GetWifeScore() > bestScore:GetWifeScore() then
+                            bestScore = s
+                        end
+                    end
+                end
+                if bestScore then
+                    self.ClearType:settext(getClearTypeFromScore(PLAYER_1, bestScore, 0))
+                    self.ClearType:diffuse(getClearTypeFromScore(PLAYER_1, bestScore, 2))
+                else
+                    self.ClearType:settext("")
+                end
+            else
+                self.ClearType:settext("")
+            end
+        else
+            self.ClearType:settext("")
+        end
     end
     params.groupActorUpdater = function(self, packName, count)
         self.SectionCollapsed:settext(packName)

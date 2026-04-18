@@ -4,10 +4,25 @@ local ygap = 2
 local packspaceY = pdh + ygap
 local currentCountry = "Global"
 
-local numscores = 13
+-- Helper function for relative time display
+local function getRelativeTime(dateStr)
+	if not dateStr or dateStr == "" then return "" end
+	local y, m, d, h, min, s = dateStr:match("(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)")
+	if not y then return dateStr end
+	local t = os.time({year=y, month=m, day=d, hour=h, min=min, sec=s})
+	local diff = os.time() - t
+	if diff < 60 then return "just now"
+	elseif diff < 3600 then return math.floor(diff/60) .. "m"
+	elseif diff < 86400 then return math.floor(diff/3600) .. "h"
+	elseif diff < 2592000 then return math.floor(diff/86400) .. "d"
+	elseif diff < 31536000 then return math.floor(diff/2592000) .. "mo"
+	else return math.floor(diff/31536000) .. "y" end
+end
+
+local numscores = 10
 local ind = 0
 local offx = 5
-local width = SCREEN_WIDTH * 0.56
+local width = SCREEN_WIDTH * 0.40
 local dwidth = width - offx * 2
 local height = (numscores + 2) * packspaceY - packspaceY / 3 -- account dumbly for header being moved up
 
@@ -89,6 +104,13 @@ local o = Def.ActorFrame {
 		self:playcommand("GetFilteredLeaderboard") -- we can move all the filter stuff to lua so we're not being dumb hurr hur -mina
 		self:playcommand("Update")
 	end,
+	SetDynamicAccentColorMessageCommand = function(self, params)
+		-- Apply accent color to frame display
+		local frame = self:GetChild("FrameDisplay")
+		if frame and params and params.color then
+			frame:playcommand("SetDynamicAccentColor", {color = params.color})
+		end
+	end,
 	UpdateCommand = function(self)
 		if not scoretable then
 			ind = 0
@@ -117,10 +139,10 @@ local o = Def.ActorFrame {
 		ygap = 2
 		packspaceY = pdh + ygap
 
-		numscores = 10
+		numscores = 8
 		ind = 0
 		offx = 5
-		width = math.max(SCREEN_WIDTH * 0.25, 240)
+		width = math.max(SCREEN_WIDTH * 0.22, 200)
 		dwidth = width - offx * 2
 		height = (numscores + 2) * packspaceY
 
@@ -182,6 +204,11 @@ local o = Def.ActorFrame {
 		InitCommand = function(self)
 			self:zoomto(width, height - headeroff):halign(0):valign(0):diffuse(getMainColor("tabs"))
 		end,
+		SetDynamicAccentColorMessageCommand = function(self, params)
+			if params and params.color then
+				self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.8)
+			end
+		end,
 		MouseRightClickMessageCommand = function(self)
 			if isOver(self) and not collapsed then
 				FILTERMAN:HelpImTrappedInAChineseFortuneCodingFactory(true)
@@ -195,7 +222,7 @@ local o = Def.ActorFrame {
 	Def.Quad {
 		Name = "HeaderBar",
 		InitCommand = function(self)
-			self:zoomto(width, pdh - 8 * tzoom):halign(0):diffuse(getMainColor("frames")):diffusealpha(0.5):valign(0)
+			self:zoomto(width, 30):halign(0):valign(0):diffuse(getMainColor("frames")):diffusealpha(0.8)
 		end
 	},
 	-- grabby thing
@@ -293,23 +320,17 @@ local o = Def.ActorFrame {
 		end
 	},
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
-		--current rate toggle
+		-- No filter button (matches local "No filter")
 		InitCommand = function(self)
-			self:xy(c5x, headeroff):zoom(tzoom):halign(1):valign(1)
+			self:xy(250, 15):zoom(0.45):halign(0.5):valign(0.5)
 			self:diffuse(getMainColor("positive"))
+			self:settext("No filter")
 		end,
 		MouseOverCommand = function(self)
 			self:diffusealpha(hoverAlpha)
 		end,
 		MouseOutCommand = function(self)
 			self:diffusealpha(1)
-		end,
-		UpdateCommand = function(self)
-			if DLMAN:GetCurrentRateFilter() then
-				self:settext(filts[2])
-			else
-				self:settext(filts[1])
-			end
 		end,
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" then
@@ -320,14 +341,11 @@ local o = Def.ActorFrame {
 		end
 	},
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
-		--top score/all score toggle
+		-- Performance button (matches local "Performance")
 		InitCommand = function(self)
+			self:xy(150, 15):zoom(0.45):halign(0.5):valign(0.5)
 			self:diffuse(getMainColor("positive"))
-			if collapsed then
-				self:xy(c5x - 175, headeroff):zoom(tzoom):halign(1):valign(1)
-			else
-				self:xy(c5x - capWideScale(160,190), headeroff):zoom(tzoom):halign(1):valign(1)
-			end
+			self:settext("Performance")
 		end,
 		MouseOverCommand = function(self)
 			self:diffusealpha(hoverAlpha)
@@ -335,32 +353,18 @@ local o = Def.ActorFrame {
 		MouseOutCommand = function(self)
 			self:diffusealpha(1)
 		end,
-		UpdateCommand = function(self)
-			if DLMAN:GetTopScoresOnlyFilter() then
-				self:settext(topornah[1])
-			else
-				self:settext(topornah[2])
-			end
-		end,
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" then
-				DLMAN:ToggleTopScoresOnlyFilter()
-				ind = 0
-				self:GetParent():queuecommand("GetFilteredLeaderboard")
+				-- Sort logic placeholder
 			end
 		end
 	},
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
-		--ccon/off filter toggle
+		-- Online Scores button - switches back to local
 		InitCommand = function(self)
-			self:diffuse(getMainColor("positive"))
-			if collapsed then
-				self:visible(false)
-				--self:xy(c5x - 110, headeroff):zoom(tzoom):halign(1):valign(1)
-			else
-				self:visible(true)
-				self:xy(c5x - capWideScale(80,96), headeroff):zoom(tzoom):halign(1):valign(1)
-			end
+			self:xy(50, 15):zoom(0.45):halign(0.5):valign(0.5)
+			self:diffuse(getMainColor("highlight"))
+			self:settext("Online Scores")
 		end,
 		MouseOverCommand = function(self)
 			self:diffusealpha(hoverAlpha)
@@ -368,18 +372,10 @@ local o = Def.ActorFrame {
 		MouseOutCommand = function(self)
 			self:diffusealpha(1)
 		end,
-		UpdateCommand = function(self)
-			if DLMAN:GetValidFilter() then
-				self:settext(ccornah[1])
-			else
-				self:settext(ccornah[2])
-			end
-		end,
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" then
-				DLMAN:ToggleValidFilter()
-				ind = 0
-				self:GetParent():queuecommand("GetFilteredLeaderboard")
+				-- Switch back to local scores by broadcasting message
+				MESSAGEMAN:Broadcast("SwitchToLocalScores")
 			end
 		end
 	}
@@ -423,265 +419,64 @@ local function makeScoreDisplay(i)
 				self:diffusealpha(0.8)
 			end,
 		},
+		-- Line 1: #Rank Username · Score%
 		LoadFont("Common normal") .. {
-			--rank
 			InitCommand = function(self)
-				self:x(c0x):zoom(tzoom):halign(0):valign(0)
-				if collapsed then
-					self:x(c0x):zoom(tzoom):halign(0):valign(0.5)
-				end
-			end,
-			DisplayCommand = function(self)
-				self:settextf("%i.", i + ind)
-			end
-		},
-		LoadFont("Common normal") .. {
-			--ssr
-			InitCommand = function(self)
-				self:x(c2x - c1x + offx):zoom(tzoom + 0.05):halign(0.5):valign(1)
-				if collapsed then
-					self:x(46):zoom(tzoom + 0.15):halign(0.5):valign(0.5):maxwidth(20 / tzoom)
-				end
-			end,
-			DisplayCommand = function(self)
-				local ssr = hs:GetSkillsetSSR("Overall")
-				self:settextf("%.2f", ssr):diffuse(byMSD(ssr))
-			end
-		},
-		LoadFont("Common normal") .. {
-			--rate
-			InitCommand = function(self)
-				self:x(c2x - c1x + offx):zoom(tzoom - 0.05):halign(0.5):valign(0):addy(row2yoff)
-				if collapsed then
-					self:x(c4x - 14):zoom(tzoom):halign(1):valign(0.5):addy(-row2yoff):maxwidth(30 / tzoom)
-				end
-			end,
-			DisplayCommand = function(self)
-				local ratestring = string.format("%.2f", hs:GetMusicRate()):gsub("%.?0$", "") .. "x"
-				self:settext(ratestring)
-			end,
-			ExpandCommand = function(self)
-				self:addy(-row2yoff)
-			end
-		},
-		UIElements.TextToolTip(1, 1, "Common Normal") .. {
-			Name = "Burt" .. i,
-			InitCommand = function(self)
-				self:x(c2x):zoom(tzoom + 0.1):maxwidth((c3x - c2x - capWideScale(10, 40)) / tzoom):halign(0):valign(1)
-				if collapsed then
-					self:x(c2x + 10):maxwidth(60 / tzoom):zoom(tzoom + 0.2):valign(0.5)
-				end
-			end,
-			DisplayCommand = function(self)
-				self:settext(hs:GetDisplayName())
-				if not hs:GetEtternaValid() then
-					self:diffuse(color("#F0EEA6"))
-				else
-					self:diffuse(getMainColor("positive"))
-				end
-			end,
-			MouseOverCommand = function(self)
-				self:diffusealpha(hoverAlpha)
-			end,
-			MouseOutCommand = function(self)
-				self:diffusealpha(1)
-			end,
-			MouseDownCommand = function(self, params)
-				if params.event == "DeviceButton_left mouse button" then
-					DLMAN:ShowUserPage(hs:GetDisplayName())
-				end
-			end
-		},
-		UIElements.TextToolTip(1, 1, "Common Normal") .. {
-			Name = "Ernie" .. i,
-			InitCommand = function(self)
-				if not collapsed then
-					self:x(c2x):zoom(tzoom - 0.05):halign(0):valign(0):maxwidth(width / 2 / tzoom):addy(row2yoff)
-				end
-			end,
-			DisplayCommand = function(self)
-				self:settext(hs:GetJudgmentString())
-				if not hs:GetEtternaValid() then
-					self:diffuse(color("#F0EEA6"))
-				else
-					self:diffuse(getMainColor("positive"))
-				end
-			end,
-			MouseOverCommand = function(self)
-				self:diffusealpha(hoverAlpha)
-			end,
-			MouseOutCommand = function(self)
-				self:diffusealpha(1)
-			end,
-			MouseDownCommand = function(self, params)
-				if params.event == "DeviceButton_left mouse button" then
-					DLMAN:ShowScorePage(hs:GetDisplayName(), hs:GetScoreid())
-				end
-			end,
-			CollapseCommand = function(self)
-				self:visible(false)
-			end,
-			ExpandCommand = function(self)
-				self:visible(true):addy(-row2yoff)
-			end
-		},
-
-		--[[ --wife version display ... not 100% reliable
-		LoadFont("Common normal") .. {
-			Name = "WifeVers" .. i,
-			InitCommand = function(self)
-				if not collapsed then
-					self:x(capWideScale(c3x + 52, c3x)):zoom(tzoom - 0.25):halign(1):valign(0.5):maxwidth(width / 2 / tzoom):diffuse(getMainColor("negative")):addy(-pdh/4)
-				end
-			end,
-			DisplayCommand = function(self)
-				if hs:GetWifeVers() ~= 3 then
-					self:settextf("W2/XML", hs:GetWifeVers())
-				else
-					self:settext("")
-				end
-			end,
-			CollapseCommand = function(self)
-				self:visible(false)
-			end,
-			ExpandCommand = function(self)
-				self:visible(true)
-			end
-		},
-		]]
-		UIElements.TextToolTip(1, 1, "Common Normal") .. {
-			Name = "Replay" .. i,
-			InitCommand = function(self)
-				if not collapsed then
-					self:x(capWideScale(c3x + 52, c3x)):zoom(tzoom - 0.05):halign(1):valign(0):maxwidth(width / 2 / tzoom):addy(
-						row2yoff
-					):diffuse(getMainColor("enabled"))
-				end
-			end,
-			BeginCommand = function(self)
-				if SCREENMAN:GetTopScreen():GetName() == "ScreenNetSelectMusic" then
-					self:visible(false)
-				end
-			end,
-			DisplayCommand = function(self)
-				if GAMESTATE:GetCurrentSteps() then
-					if hs:HasReplayData() then
-						self:settext(translated_info["Watch"])
-					else
-						self:settext("")
-					end
-				end
-			end,
-			MouseOverCommand = function(self)
-				self:diffusealpha(hoverAlpha)
-			end,
-			MouseOutCommand = function(self)
-				self:diffusealpha(1)
-			end,
-			MouseDownCommand = function(self, params)
-				if params.event == "DeviceButton_left mouse button" and hs then
-					DLMAN:RequestOnlineScoreReplayData(
-						hs,
-						function()
-							if hs:GetReplay():HasReplayData() then
-								SCREENMAN:GetTopScreen():PlayReplay(hs)
-							else
-								ms.ok(translated_info["NoReplay"])
-							end
-						end
-					)
-				end
-			end,
-			CollapseCommand = function(self)
-				self:visible(false)
-			end,
-			ExpandCommand = function(self)
-				self:visible(true):addy(-row2yoff)
-			end
-		},
-		UIElements.QuadButton(1, 1) .. {
-			InitCommand = function(self)
-				self:x(c5x):zoomto(50,10):halign(1):valign(1)
-				if collapsed then
-					self:x(c5x):zoomto(40, 10):halign(1):valign(0.5)
-				end
-				self:diffusealpha(0)
-			end,
-			MouseOverCommand = function(self)
-				if self:IsVisible() then
-					self:GetParent():GetChild("NormalText"):visible(false)
-					self:GetParent():GetChild("LongerText"):visible(true)
-				end
-			end,
-			MouseOutCommand = function(self)
-				if self:IsVisible() then
-					self:GetParent():GetChild("NormalText"):visible(true)
-					self:GetParent():GetChild("LongerText"):visible(false)
-				end
-			end,
-			MouseDownCommand = function(self, params)
-				if params.event == "DeviceButton_left mouse button" and hs and not collapsed then
-					if SCREENMAN:GetTopScreen():GetName() == "ScreenNetSelectMusic" then return end
-					if hs:HasReplayData() then
-						DLMAN:RequestOnlineScoreReplayData(
-							hs,
-							function()
-								setScoreForPlot(hs)
-								SCREENMAN:AddNewScreenToTop("ScreenScoreTabOffsetPlot")
-							end
-						)
-					end
-				end
-			end
-		},
-		LoadFont("Common normal") .. {
-			--percent
-			Name="NormalText",
-			InitCommand = function(self)
-				self:x(c5x):zoom(tzoom + 0.15):halign(1):valign(1)
-				if collapsed then
-					self:x(c5x):zoom(tzoom + 0.15):halign(1):valign(0.5):maxwidth(30 / tzoom)
-				end
-			end,
-			DisplayCommand = function(self)
-				self:settextf("%05.2f%%", notShit.floor(hs:GetWifeScore() * 100, 2)):diffuse(byGrade(hs:GetWifeGrade()))
-			end
-		},
-		LoadFont("Common normal") .. {
-			--percent
-			Name="LongerText",
-			InitCommand = function(self)
-				self:x(c5x):zoom(tzoom + 0.15):halign(1):valign(1)
-				if collapsed then
-					self:x(c5x):zoom(tzoom + 0.15):halign(1):valign(0.5):maxwidth(30 / tzoom)
-				end
-				self:visible(false)
+				self:x(c0x):zoom(tzoom + 0.1):halign(0):valign(1):y(-2)
 			end,
 			DisplayCommand = function(self)
 				local perc = hs:GetWifeScore() * 100
-				self:settextf("%05.4f%%", notShit.floor(perc, 4))
+				local percStr
+				if perc > 99.65 then
+					percStr = string.format("%.4f%%", perc)
+				else
+					percStr = string.format("%.2f%%", perc)
+				end
+				self:settextf("#%i %s · %s", i + ind, hs:GetDisplayName(), percStr)
 				self:diffuse(byGrade(hs:GetWifeGrade()))
 			end
 		},
+		-- Line 2: ClearType · Notes · MSD (left) | Rate (right)
 		LoadFont("Common normal") .. {
-			--date
 			InitCommand = function(self)
-				if not collapsed then
-					self:x(c5x):zoom(tzoom - 0.05):halign(1):valign(0):maxwidth(width / 4 / tzoom):addy(row2yoff)
-				end
+				self:x(c0x):zoom(tzoom):halign(0):valign(0):y(2)
 			end,
 			DisplayCommand = function(self)
-				if IsUsingWideScreen() then
-					self:settext(hs:GetDate())
-				else
-					self:settext(hs:GetDate():sub(1, 10))
+				local steps = GAMESTATE:GetCurrentSteps()
+				local msd = "--"
+				local notes = "--"
+				if steps then
+					local msdVal = steps:GetMSD(hs:GetMusicRate(), 1)
+					msd = string.format("%.2f", msdVal)
+					local radar = steps:GetRadarValues(PLAYER_1)
+					if radar then
+						notes = string.format("%d", radar:GetValue("RadarCategory_Notes"))
+					end
 				end
+				-- Use grade-based clear type text
+				local grade = hs:GetWifeGrade()
+				local clearText = ToEnumShortString(grade)
+				self:settextf("%s · %sx · %s", clearText, notes, msd)
+				self:diffuse(color("#CCCCCC"))
+			end
+		},
+		-- Rate (right aligned)
+		LoadFont("Common normal") .. {
+			InitCommand = function(self)
+				self:x(dwidth - 60):zoom(tzoom):halign(1):valign(1):y(-2)
 			end,
-			CollapseCommand = function(self)
-				self:visible(false)
+			DisplayCommand = function(self)
+				self:settextf("%.2fx", hs:GetMusicRate())
+			end
+		},
+		-- Time (far right)
+		LoadFont("Common normal") .. {
+			InitCommand = function(self)
+				self:x(dwidth - 10):zoom(tzoom):halign(1):valign(0):y(2)
 			end,
-			ExpandCommand = function(self)
-				self:visible(true):addy(-row2yoff)
+			DisplayCommand = function(self)
+				self:settext(getRelativeTime(hs:GetDate()))
+				self:diffuse(color("#AAAAAA"))
 			end
 		}
 	}

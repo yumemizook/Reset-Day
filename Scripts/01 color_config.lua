@@ -2,22 +2,22 @@ local defaultConfig = {
 	title = {
 		BG_Left = "#0d0d0d",
 		BG_Right = "#1a1a1a",
-		Line_Left = "#4ECDC4",
-		Line_Right = "#2E8B7B"
+		Line_Left = "#FFFFFF",
+		Line_Right = "#FFFFFF"
 	},
 	main = {
-		highlight = "#2E8B7B",
+		highlight = "#FFFFFF",
 		frames = "#0d0d0d",
 		tabs = "#1a1a1aCC",
-		enabled = "#4ECDC4",
+		enabled = "#FFFFFF",
 		disabled = "#444444",
 		negative = "#FF6B6B",
-		positive = "#4ECDC4"
+		positive = "#FFFFFF"
 	},
 	leaderboard = {
 		background = "#111111CC",
 		border = "#0d0d0d",
-		text = "#4ECDC4"
+		text = "#FFFFFF"
 	},
 	clearType = {
 		MFC = "#66ccff",

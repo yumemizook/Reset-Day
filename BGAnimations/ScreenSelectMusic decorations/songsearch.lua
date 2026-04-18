@@ -64,19 +64,27 @@ local t = Def.ActorFrame {
 		whee = SCREENMAN:GetTopScreen():GetMusicWheel()
 		SCREENMAN:GetTopScreen():AddInputCallback(searchInput)
 	end,
+	Def.Quad {
+		InitCommand = function(self)
+			self:xy(SCREEN_CENTER_X, 60):zoomto(SCREEN_WIDTH * 0.5, 35):halign(0.5):diffuse(color("#000000")):diffusealpha(0.5)
+		end,
+		SetDynamicAccentColorMessageCommand = function(self, params)
+			self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.3)
+		end
+	},
 	LoadFont("Common Normal") .. {
 		InitCommand = function(self)
-			self:xy(SCREEN_WIDTH - 250, 15):zoom(0.45):halign(0)
+			self:xy(SCREEN_CENTER_X, 60):zoom(0.6):halign(0.5)
 		end,
 		UpdateStringMessageCommand = function(self)
 			if active then
-				self:settext("Search: " .. searchstring .. "_")
+				self:settext("🔍 " .. searchstring .. "_")
 				self:diffuse(color("#00FF00"))
 			elseif searchstring ~= "" then
-				self:settext("Search: " .. searchstring)
+				self:settext("🔍 " .. searchstring)
 				self:diffuse(color("#FFFFFF"))
 			else
-				self:settext("Press Tab to search")
+				self:settext("🔍 Press Tab to search")
 				self:diffuse(color("#888888"))
 			end
 		end,

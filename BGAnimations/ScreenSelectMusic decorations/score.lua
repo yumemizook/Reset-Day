@@ -5,6 +5,7 @@ local rates
 local rateIndex = 1
 local scoreIndex = 1
 local score
+local page = 1 -- Fix for leaderboard glitch
 local pn = GAMESTATE:GetEnabledPlayers()[1]
 local nestedTab = 1
 local nestedTabs = {
@@ -12,12 +13,27 @@ local nestedTabs = {
 	THEME:GetString("TabScore", "NestedOnline")
 }
 local hasReplayData
+local currentAccentColor = nil
 
 local frameX = 20
 local frameY = 70
-local frameWidth = SCREEN_WIDTH * 0.45
-local frameHeight = 110
+local frameWidth = SCREEN_WIDTH * 0.40
+local frameHeight = 280
 local fontScale = 0.35
+local function getRelativeTime(dateStr)
+	if not dateStr or dateStr == "" then return "" end
+	local y, m, d, h, min, s = dateStr:match("(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)")
+	if not y then return dateStr end
+	local t = os.time({year=y, month=m, day=d, hour=h, min=min, sec=s})
+	local diff = os.time() - t
+	if diff < 60 then return "just now"
+	elseif diff < 3600 then return math.floor(diff/60) .. "m ago"
+	elseif diff < 86400 then return math.floor(diff/3600) .. "h ago"
+	elseif diff < 2592000 then return math.floor(diff/86400) .. "d ago"
+	elseif diff < 31536000 then return math.floor(diff/2592000) .. "mo ago"
+	else return math.floor(diff/31536000) .. "y ago" end
+end
+
 local offsetX = 15
 local offsetY = 15
 local netScoresPerPage = 8
@@ -114,10 +130,11 @@ local ret = Def.ActorFrame {
 	BeginCommand = function(self)
 		moped = self:GetChild("ScoreDisplay")
 		self:queuecommand("Set"):visible(true)
+		-- Start with local scores visible, online hidden (default nestedTab = 1)
 		self:GetChild("LocalScores"):xy(frameX, frameY):visible(true)
-		moped:xy(frameX, frameY):visible(true)
+		moped:xy(frameX, frameY):visible(false)
 
-		if FILTERMAN:oopsimlazylol() then -- set saved position and auto collapse
+		if FILTERMAN:oopsimlazylol() then -- set saved position and auto collapse (switch to online)
 			nestedTab = 2
 			self:GetChild("LocalScores"):visible(false)
 			moped:xy(FILTERMAN:grabposx("Doot"), FILTERMAN:grabposy("Doot")):visible(true)
@@ -131,13 +148,19 @@ local ret = Def.ActorFrame {
 	InvisCommand= function(self)
 		self:visible(false)
 		self:GetChild("LocalScores"):visible(false)
+		self:GetChild("ScoreDisplay"):visible(false)
 	end,
 	OnCommand = function(self)
 		self:bouncebegin(0.2):xy(0, 0):diffusealpha(1)
-		if getTabIndex() == 2 and nestedTab == 1 then
-			self:GetChild("LocalScores"):visible(true)
-		else
-			self:GetChild("LocalScores"):visible(false)
+		-- Default: show local (nestedTab = 1), hide online
+		if getTabIndex() == 2 then
+			if nestedTab == 1 then
+				self:GetChild("LocalScores"):visible(true)
+				self:GetChild("ScoreDisplay"):visible(false)
+			else
+				self:GetChild("LocalScores"):visible(false)
+				self:GetChild("ScoreDisplay"):visible(true)
+			end
 		end
 	end,
 	SetCommand = function(self)
@@ -212,7 +235,42 @@ local ret = Def.ActorFrame {
 	end,
 	NestedTabChangedMessageCommand = function(self)
 		self:queuecommand("Set")
-		updateLeaderBoardForCurrentChart()
+		-- Toggle visibility between local and online leaderboards
+		if nestedTab == 1 then
+			self:GetChild("LocalScores"):visible(true)
+			self:GetChild("ScoreDisplay"):visible(false)
+		else
+			self:GetChild("LocalScores"):visible(false)
+			self:GetChild("ScoreDisplay"):visible(true)
+			updateLeaderBoardForCurrentChart()
+		end
+		-- Broadcast accent color to ensure both leaderboards have it
+		if currentAccentColor then
+			MESSAGEMAN:Broadcast("SetDynamicAccentColor", {color = currentAccentColor})
+		end
+	end,
+	SwitchToLocalScoresMessageCommand = function(self)
+		-- Handle request from online leaderboard to switch back to local
+		nestedTab = 1
+		self:GetChild("LocalScores"):visible(true)
+		self:GetChild("ScoreDisplay"):visible(false)
+		-- Update button text in LocalScores
+		local btn = self:GetChild("LocalScores"):GetChild("YourScoresBtn")
+		if btn then
+			btn:settext("Your scores")
+			btn:playcommand("Update")
+		end
+		-- Broadcast accent color to ensure visibility
+		if currentAccentColor then
+			MESSAGEMAN:Broadcast("SetDynamicAccentColor", {color = currentAccentColor})
+		end
+		MESSAGEMAN:Broadcast("NestedTabChanged")
+	end,
+	SetDynamicAccentColorMessageCommand = function(self, params)
+		-- Store the current accent color for later use
+		if params and params.color then
+			currentAccentColor = params.color
+		end
 	end,
 	CodeMessageCommand = function(self, params) -- this is intentionally bad to remind me to fix other things that are bad -mina
 		if ((getTabIndex() == 2 and nestedTab == 2) and not collapsed) and DLMAN:GetCurrentRateFilter() then
@@ -286,6 +344,7 @@ local t = Def.ActorFrame {
 				if rtTable ~= nil then
 					rates, rateIndex = getUsedRates(rtTable)
 					scoreIndex = 1
+					page = 1
 					self:queuecommand("Display")
 				else
 					self:queuecommand("Init")
@@ -297,6 +356,7 @@ local t = Def.ActorFrame {
 	end,
 	NestedTabChangedMessageCommand = function(self)
 		self:visible(nestedTab == 1)
+		page = 1
 		self:queuecommand("Set")
 	end,
 	CurrentStepsChangedMessageCommand = function(self)
@@ -347,6 +407,9 @@ local t = Def.ActorFrame {
 		InitCommand = function(self)
 			self:zoomto(frameWidth, frameHeight):halign(0):valign(0):diffuse(getMainColor("tabs"))
 		end,
+		SetDynamicAccentColorMessageCommand = function(self, params)
+			self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.8)
+		end,
 		CollapseCommand = function(self)
 			self:visible(false)
 		end,
@@ -359,138 +422,149 @@ local t = Def.ActorFrame {
 -- header bar
 t[#t + 1] = Def.Quad {
 	InitCommand = function(self)
-		self:zoomto(frameWidth, offsetY):halign(0):valign(0):diffuse(getMainColor("frames")):diffusealpha(0.5)
-	end
+		self:zoomto(frameWidth, 30):halign(0):valign(0):diffuse(getMainColor("frames")):diffusealpha(0.8)
+	end,
+	SetDynamicAccentColorMessageCommand = function(self, params)
+		self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.8)
+	end,
 }
+
+local function topBarButton(name, x, width, text, cmd, activeFunc)
+	return UIElements.TextToolTip(1, 1, "Common Normal") .. {
+		Name = name,
+		InitCommand = function(self)
+			self:xy(x, 15):zoom(0.45):halign(0.5):settext(text)
+		end,
+		UpdateCommand = function(self)
+			if activeFunc and activeFunc() then
+				self:diffuse(getMainColor("highlight"))
+			else
+				self:diffuse(getMainColor("positive"))
+			end
+		end,
+		MouseDownCommand = function(self, params)
+			if params.event == "DeviceButton_left mouse button" then
+				cmd()
+				MESSAGEMAN:Broadcast("TopBarUpdate")
+			end
+		end,
+		TopBarUpdateMessageCommand = function(self) self:playcommand("Update") end,
+		NestedTabChangedMessageCommand = function(self)
+			if name == "YourScoresBtn" then
+				if nestedTab == 1 then
+					self:settext("Your scores")
+				else
+					self:settext("Online Scores")
+				end
+			end
+			self:playcommand("Update")
+		end,
+		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha) end,
+		MouseOutCommand = function(self) self:diffusealpha(1) end,
+	}
+end
+
+t[#t + 1] = topBarButton("YourScoresBtn", 50, 100, "Your scores", function() 
+	nestedTab = (nestedTab == 1) and 2 or 1 
+	MESSAGEMAN:Broadcast("NestedTabChanged")
+end, function() return nestedTab == 1 end)
+
+t[#t + 1] = topBarButton("PerformanceBtn", 150, 100, "Performance", function()
+	-- Sort logic
+end, function() return true end)
+
+t[#t + 1] = topBarButton("FilterBtn", 250, 100, "No filter", function()
+	-- Rate filter logic
+end, function() return true end)
 
 local l = Def.ActorFrame {
 	-- stuff inside the frame.. so we can move it all at once
 	InitCommand = function(self)
 		self:xy(offsetX, offsetY + headeroffY)
 	end,
-	LoadFont("Common Large") .. {
-		Name = "Grades",
-		InitCommand = function(self)
-			self:y(20):zoom(0.65):halign(0):maxwidth(60 / 0.65):settext("")
-		end,
-		DisplayCommand = function(self)
-			self:settext(THEME:GetString("Grade", ToEnumShortString(score:GetWifeGrade())))
-			self:diffuse(getGradeColor(score:GetWifeGrade()))
+	-- Score rows
+	(function()
+		local rows = Def.ActorFrame {}
+		for i = 1, 10 do
+			local score
+			rows[#rows + 1] = Def.ActorFrame {
+				Name = "ScoreRow" .. i,
+				InitCommand = function(self)
+					self:y(20 + (i-1) * 28)
+				end,
+				DisplayCommand = function(self)
+					if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
+						score = rtTable[rates[rateIndex]][i + (page - 1) * 10]
+						if score then
+							self:visible(true)
+							self:playcommand("SetScore")
+						else
+							self:visible(false)
+						end
+					else
+						self:visible(false)
+					end
+				end,
+				-- Date
+				LoadFont("Common Normal") .. {
+					InitCommand = function(self)
+						self:zoom(fontScale):halign(0)
+					end,
+					SetScoreCommand = function(self)
+						self:settext(getRelativeTime(score:GetDate()))
+					end
+				},
+				-- Wife% - show 4 decimal places for high scores
+				LoadFont("Common Normal") .. {
+					InitCommand = function(self)
+						self:x(80):zoom(fontScale):halign(0.5)
+					end,
+					SetScoreCommand = function(self)
+						local perc = score:GetWifeScore() * 100
+						if perc > 99.65 then
+							self:settextf("%.4f%%", perc):diffuse(getGradeColor(score:GetWifeGrade()))
+						else
+							self:settextf("%.2f%%", perc):diffuse(getGradeColor(score:GetWifeGrade()))
+						end
+					end
+				},
+				-- ClearType
+				LoadFont("Common Normal") .. {
+					InitCommand = function(self)
+						self:x(145):zoom(fontScale):halign(0.5)
+					end,
+					SetScoreCommand = function(self)
+						self:settext(getClearTypeFromScore(PLAYER_1, score, 0)):diffuse(getClearTypeFromScore(PLAYER_1, score, 2))
+					end
+				},
+				-- MSD (chart difficulty)
+				LoadFont("Common Normal") .. {
+					InitCommand = function(self)
+						self:x(200):zoom(fontScale):halign(0.5)
+					end,
+					SetScoreCommand = function(self)
+						local steps = GAMESTATE:GetCurrentSteps()
+						if steps then
+							local msd = steps:GetMSD(score:GetMusicRate(), 1)
+							self:settextf("%.2f", msd):diffuse(byMSD(msd))
+						else
+							self:settext("--")
+						end
+					end
+				},
+				-- Rate
+				LoadFont("Common Normal") .. {
+					InitCommand = function(self)
+						self:x(260):zoom(fontScale):halign(0.5)
+					end,
+					SetScoreCommand = function(self)
+						self:settextf("%.2fx", score:GetMusicRate())
+					end
+				}
+			}
 		end
-	},
-	-- Wife display
-	LoadFont("Common Normal") .. {
-		Name = "Wife",
-		InitCommand = function(self)
-			self:xy(65, 15):zoom(0.6):halign(0):settext("")
-		end,
-		DisplayCommand = function(self)
-			if score:GetWifeScore() == 0 then
-				self:settextf("NA")
-			else
-				local wv = score:GetWifeVers()
-				local ws = "Wife" .. wv .. " J"
-				local judge = 4
-				if PREFSMAN:GetPreference("SortBySSRNormPercent") == false then
-					judge = table.find(ms.JudgeScalers, notShit.round(score:GetJudgeScale(), 2))
-				end
-				if not judge then judge = 4 end
-				if judge < 4 then judge = 4 end
-				local js = judge ~= 9 and judge or "ustice"
-				local perc = score:GetWifeScore() * 100
-				if perc > 99.65 then
-					self:settextf("%05.4f%% (%s)", notShit.floor(perc, 4), ws .. js)
-				else
-					self:settextf("%05.2f%% (%s)", notShit.floor(perc, 2), ws .. js)
-				end
-				self:diffuse(byGrade(score:GetWifeGrade()))
-			end
-		end
-	},
-	LoadFont("Common Normal") .. {
-		Name = "Score",
-		InitCommand = function(self)
-			self:xy(65, 30):zoom(0.6):halign(0):settext("")
-		end,
-		DisplayCommand = function(self)
-			if score:GetWifeScore() == 0 then
-				self:settext("")
-			else
-				local overall = score:GetSkillsetSSR("Overall")
-				self:settextf("%.2f", overall):diffuse(byMSD(overall))
-			end
-		end
-	},
-	LoadFont("Common Normal") .. {
-		Name = "Score",
-		InitCommand = function(self)
-			self:xy(65, 43):zoom(0.5):halign(0):settext("")
-		end,
-		DisplayCommand = function(self)
-			if score:GetWifeScore() == 0 then
-				self:settext("")
-			else
-				local ss = GAMESTATE:GetCurrentSteps():GetRelevantSkillsetsByMSDRank(getCurRateValue(), 1)
-				if ss ~= "" then
-					self:settext(THEME:GetString("Skillsets", ss))
-				else
-					self:settext("")
-				end
-			end
-		end
-	},
-	LoadFont("Common Normal") .. {
-		Name = "ClearType",
-		InitCommand = function(self)
-			self:y(44):zoom(0.5):halign(0):settext(""):diffuse(color(colorConfig:get_data().clearType["NoPlay"]))
-		end,
-		DisplayCommand = function(self)
-			self:settext(getClearTypeFromScore(pn, score, 0))
-			self:diffuse(getClearTypeFromScore(pn, score, 2))
-		end
-	},
-	LoadFont("Common Normal") .. {
-		Name = "Mods",
-		InitCommand = function(self)
-			self:y(63):zoom(0.4):halign(0):maxwidth(capWideScale(690,1000))
-			self:settextf("%s:", translated_info["Mods"]):settext("")
-		end,
-		DisplayCommand = function(self)
-			self:settextf("%s: %s", translated_info["Mods"], getModifierTranslations(score:GetModifiers()))
-		end
-	},
-	LoadFont("Common Normal") .. {
-		Name = "Date",
-		InitCommand = function(self)
-			self:xy(frameWidth/2 - offsetX, 63):zoom(0.4):halign(0):settextf("%s:", translated_info["DateAchieved"]):settext("")
-		end,
-		DisplayCommand = function(self)
-			self:settextf("%s: %s", translated_info["DateAchieved"], getScoreDate(score))
-		end
-	},
-	LoadFont("Common Normal") .. {
-		Name = "Combo",
-		InitCommand = function(self)
-			self:y(78):zoom(0.4):halign(0):settextf("%s:", translated_info["MaxCombo"]):settext("")
-		end,
-		DisplayCommand = function(self)
-			self:settextf("%s: %d", translated_info["MaxCombo"], score:GetMaxCombo())
-		end
-	},
-	LoadFont("Common Normal") .. {
-		Name = "ComboBreaks",
-		InitCommand = function(self)
-			self:xy(frameWidth/2 - offsetX, 78):zoom(0.4):halign(0):settextf("%s:", translated_info["ComboBreaks"]):settext("")
-		end,
-		DisplayCommand = function(self)
-			local comboBreaks = getScoreComboBreaks(score)
-			if comboBreaks ~= nil then
-				self:settextf("%s: %s", translated_info["ComboBreaks"], comboBreaks)
-			else
-				self:settextf("%s: -", translated_info["ComboBreaks"])
-			end
-		end
-	},
+		return rows
+	end)(),
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		InitCommand = function(self)
 			self:xy(frameWidth - offsetX - frameX, frameHeight - headeroffY - 15 - offsetY):zoom(0.5):halign(1)
@@ -933,12 +1007,17 @@ local function nestedTabButton(i)
 		Name = "Button_"..i,
 		InitCommand = function(self)
 			self:xy(frameX + offsetX/2 + (i - 1) * (nestedTabButtonWidth - capWideScale(100, 80)), frameY + offsetY - 4)
+			-- Only show if on Scores tab
+			self:visible(getTabIndex() == 2)
+		end,
+		TabChangedMessageCommand = function(self)
+			self:visible(getTabIndex() == 2)
 		end,
 		CollapseCommand = function(self)
 			self:visible(false)
 		end,
 		ExpandCommand = function(self)
-			self:visible(true)
+			self:visible(getTabIndex() == 2)
 		end,
 		UIElements.TextToolTip(1, 1, "Common Normal") .. {
 			InitCommand = function(self)

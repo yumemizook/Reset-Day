@@ -28,9 +28,22 @@ local sortTable = {
 	SortOrder_Ungrouped = THEME:GetString("SortOrder", "Ungrouped")
 }
 
+local sortY = 100
+local sortX = SCREEN_WIDTH - 200
+
+-- Small subtle background for sort area
+t[#t + 1] = Def.Quad {
+	InitCommand = function(self)
+		self:xy(SCREEN_WIDTH - 280, sortY):zoomto(260, 25):halign(0):valign(0.5):diffuse(color("#000000")):diffusealpha(0.3)
+	end,
+	SetDynamicAccentColorMessageCommand = function(self, params)
+		self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.2)
+	end
+}
+
 t[#t + 1] = LoadFont("Common Normal") .. {
 	InitCommand = function(self)
-		self:xy(frameX, frameY):halign(0):zoom(0.4):settext("Sort:")
+		self:xy(SCREEN_WIDTH - 275, sortY):halign(0):zoom(0.4):settext("Sort:")
 		self:diffuse(color("#888888"))
 	end
 }
@@ -38,7 +51,7 @@ t[#t + 1] = LoadFont("Common Normal") .. {
 local function makeSortButton(label, sortType, xOffset)
 	return UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		InitCommand = function(self)
-			self:xy(frameX + xOffset, frameY):halign(0):zoom(0.4):settext(label)
+			self:xy(SCREEN_WIDTH + xOffset, sortY):halign(0):zoom(0.4):settext(label)
 		end,
 		BeginCommand = function(self)
 			self:queuecommand("Set")
@@ -68,11 +81,8 @@ local function makeSortButton(label, sortType, xOffset)
 	}
 end
 
-t[#t + 1] = makeSortButton("Title", "SortOrder_Title", 30)
-t[#t + 1] = makeSortButton("Group", "SortOrder_Group", 65)
-t[#t + 1] = makeSortButton("Pack", "SortOrder_Group", 105)
-
-t[#t + 1] = StandardDecorationFromFileOptional("BPMDisplay", "BPMDisplay")
-t[#t + 1] = StandardDecorationFromFileOptional("BPMLabel", "BPMLabel")
+t[#t + 1] = makeSortButton("Title ⌄", "SortOrder_Title", -240)
+t[#t + 1] = makeSortButton("Group:", "SortOrder_Group", -160)
+t[#t + 1] = makeSortButton("Pack ⌃", "SortOrder_Group", -80)
 
 return t

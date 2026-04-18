@@ -1,7 +1,18 @@
+local AvatarX = SCREEN_WIDTH - 180
+local AvatarY = 17
 -- Old avatar actor frame.. renamed since much more will be placed here (hopefully?)
 local t =
 	Def.ActorFrame {
-	Name = "PlayerAvatar"
+	Name = "PlayerAvatar",
+	LoadFont("Common Normal") .. {
+		Name = "GlobeIcon",
+		InitCommand = function(self)
+			self:xy(AvatarX, AvatarY):zoom(0.4):settext("🌐"):diffuse(getMainColor("highlight"))
+		end,
+		SetDynamicAccentColorMessageCommand = function(self, params)
+			self:finishtweening():linear(0.2):diffuse(params.color)
+		end
+	}
 }
 
 local profile
@@ -11,8 +22,6 @@ local playCount = 0
 local playTime = 0
 local noteCount = 0
 local numfaves = 0
-local AvatarX = 0
-local AvatarY = SCREEN_HEIGHT - 50
 local playerRating = 0
 local uploadbarwidth = 100
 local uploadbarheight = 10
@@ -188,7 +197,7 @@ t[#t + 1] = Def.ActorFrame {
 	UIElements.SpriteButton(1, 1, nil) .. {
 		Name = "Image",
 		InitCommand = function(self)
-			self:visible(true):halign(0):valign(0):xy(AvatarX, AvatarY)
+			self:visible(false):halign(0):valign(0.5):xy(AvatarX, AvatarY)
 		end,
 		BeginCommand = function(self)
 			self:queuecommand("ModifyAvatar")
@@ -244,7 +253,7 @@ t[#t + 1] = Def.ActorFrame {
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		Name = "loginlogout",
 		InitCommand = function(self)
-			self:xy(SCREEN_CENTER_X, AvatarY + 8):halign(0.5):zoom(0.45):diffuse(ButtonColor)
+			self:xy(AvatarX + 20, AvatarY):halign(0):zoom(0.45):diffuse(ButtonColor)
 		end,
 		BeginCommand = function(self)
 			self:queuecommand("Set")
@@ -320,7 +329,7 @@ t[#t + 1] = Def.ActorFrame {
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		Name = "LoggedInAs",
 		InitCommand = function(self)
-			self:xy(SCREEN_CENTER_X, AvatarY + 23.5):halign(0.5):zoom(0.45):diffuse(ButtonColor)
+			self:xy(AvatarX + 20, AvatarY + 10):halign(0):zoom(0.35):diffuse(ButtonColor)
 		end,
 		BeginCommand = function(self)
 			self:queuecommand("Set")
