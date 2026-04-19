@@ -6,6 +6,7 @@ local rateIndex = 1
 local scoreIndex = 1
 local score
 local page = 1 -- Fix for leaderboard glitch
+local scoreOffset = 0 -- offset for scrolling through the list
 local pn = GAMESTATE:GetEnabledPlayers()[1]
 local nestedTab = 1
 local nestedTabs = {
@@ -16,10 +17,10 @@ local hasReplayData
 local currentAccentColor = nil
 
 local frameX = 20
-local frameY = 70
-local frameWidth = SCREEN_WIDTH * 0.40
+local frameY = 103
+local frameWidth = capWideScale(get43size(400), 400)
 local frameHeight = 196
-local fontScale = 0.25
+local fontScale = 0.45
 local function getRelativeTime(dateStr)
 	if not dateStr or dateStr == "" then return "" end
 	local y, m, d, h, min, s = dateStr:match("(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)")
@@ -34,7 +35,7 @@ local function getRelativeTime(dateStr)
 	else return math.floor(diff/31536000) .. "y ago" end
 end
 
-local offsetX = 15
+local offsetX = 7
 local offsetY = 15
 local netScoresPerPage = 8
 local netScoresCurrentPage = 1
@@ -246,18 +247,18 @@ local cheese
 local function input(event)
 	if isOver(cheese:GetChild("FrameDisplay")) then
 		if event.DeviceInput.button == "DeviceButton_mousewheel up" and event.type == "InputEventType_FirstPress" then
-			moving = true
 			if nestedTab == 1 and rtTable and rtTable[rates[rateIndex]] ~= nil then
-				cheese:queuecommand("PrevScore")
+				scoreOffset = math.max(0, scoreOffset - 1)
+				cheese:playcommand("Display")
 				return true
 			end
 		elseif event.DeviceInput.button == "DeviceButton_mousewheel down" and event.type == "InputEventType_FirstPress" then
 			if nestedTab == 1 and rtTable ~= nil and rtTable[rates[rateIndex]] ~= nil then
-				cheese:queuecommand("NextScore")
+				local maxOffset = math.max(0, #rtTable[rates[rateIndex]] - 5)
+				scoreOffset = math.min(maxOffset, scoreOffset + 1)
+				cheese:playcommand("Display")
 				return true
 			end
-		elseif moving == true then
-			moving = false
 		end
 	end
 	return false
@@ -279,7 +280,7 @@ local t = Def.ActorFrame {
 				if rtTable ~= nil then
 					rates, rateIndex = getUsedRates(rtTable)
 					scoreIndex = 1
-					page = 1
+					scoreOffset = 0
 					self:queuecommand("Display")
 				else
 					self:queuecommand("Init")
@@ -291,7 +292,7 @@ local t = Def.ActorFrame {
 	end,
 	NestedTabChangedMessageCommand = function(self)
 		self:visible(nestedTab == 1)
-		page = 1
+		scoreOffset = 0
 		self:queuecommand("Set")
 	end,
 	CurrentStepsChangedMessageCommand = function(self)
@@ -304,21 +305,19 @@ local t = Def.ActorFrame {
 				self:queuecommand("NextRate")
 			elseif params.Name == "PrevRate" then
 				self:queuecommand("PrevRate")
-			elseif params.Name == "NextScore" then
-				self:queuecommand("NextScore")
-			elseif params.Name == "PrevScore" then
-				self:queuecommand("PrevScore")
 			end
 		end
 	end,
 	NextRateCommand = function(self)
 		rateIndex = ((rateIndex) % (#rates)) + 1
 		scoreIndex = 1
+		scoreOffset = 0
 		self:queuecommand("Display")
 	end,
 	PrevRateCommand = function(self)
 		rateIndex = ((rateIndex - 2) % (#rates)) + 1
 		scoreIndex = 1
+		scoreOffset = 0
 		self:queuecommand("Display")
 	end,
 	NextScoreCommand = function(self)
@@ -348,6 +347,10 @@ local t = Def.ActorFrame {
 		Name = "FrameDisplay",
 		InitCommand = function(self)
 			self:zoomto(frameWidth, frameHeight):halign(0):valign(0):diffuse(getMainColor("tabs"))
+			-- Apply stored accent color if it exists
+			if currentAccentColor then
+				self:diffuse(currentAccentColor):diffusealpha(0.8)
+			end
 		end,
 		SetDynamicAccentColorMessageCommand = function(self, params)
 			self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.8)
@@ -406,16 +409,16 @@ local function topBarButton(name, x, width, text, cmd, activeFunc)
 	}
 end
 
-t[#t + 1] = topBarButton("YourScoresBtn", 50, 100, "Your scores", function() 
+t[#t + 1] = topBarButton("YourScoresBtn", frameWidth * 0.2, 100, "Your scores", function() 
 	nestedTab = (nestedTab == 1) and 2 or 1 
 	MESSAGEMAN:Broadcast("NestedTabChanged")
 end, function() return nestedTab == 1 end)
 
-t[#t + 1] = topBarButton("PerformanceBtn", 150, 100, "Performance", function()
+t[#t + 1] = topBarButton("PerformanceBtn", frameWidth * 0.5, 100, "Performance", function()
 	-- Sort logic
 end, function() return true end)
 
-t[#t + 1] = topBarButton("FilterBtn", 250, 100, "No filter", function()
+t[#t + 1] = topBarButton("FilterBtn", frameWidth * 0.8, 100, "No filter", function()
 	-- Rate filter logic
 end, function() return true end)
 
@@ -427,16 +430,23 @@ local l = Def.ActorFrame {
 	-- Score rows
 	(function()
 		local rows = Def.ActorFrame {}
-		for i = 1, 10 do
+		local numScoresToDisplay = 5
+		for i = 1, numScoresToDisplay do
 			local score
 			rows[#rows + 1] = Def.ActorFrame {
 				Name = "ScoreRow" .. i,
 				InitCommand = function(self)
-					self:y(20 + (i-1) * 19.6)
+					self:y(32 + (i - 1) * 28)
 				end,
-				DisplayCommand = function(self)
+				-- Row Background
+				Def.Quad {
+					InitCommand = function(self)
+						self:zoomto(frameWidth - 10, 24):halign(0):diffuse(color("#000000")):diffusealpha(0.2)
+					end,
+				},
+					DisplayCommand = function(self)
 					if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
-						score = rtTable[rates[rateIndex]][i + (page - 1) * 10]
+						score = rtTable[rates[rateIndex]][i + scoreOffset]
 						if score then
 							self:visible(true)
 							self:playcommand("SetScore")
@@ -459,7 +469,7 @@ local l = Def.ActorFrame {
 				-- Wife% - show 4 decimal places for high scores
 				LoadFont("Common Normal") .. {
 					InitCommand = function(self)
-						self:x(80):zoom(fontScale):halign(0.5)
+						self:x(frameWidth * 0.28):zoom(fontScale):halign(0.5)
 					end,
 					SetScoreCommand = function(self)
 						local perc = score:GetWifeScore() * 100
@@ -479,7 +489,7 @@ local l = Def.ActorFrame {
 				-- ClearType
 				LoadFont("Common Normal") .. {
 					InitCommand = function(self)
-						self:x(145):zoom(fontScale):halign(0.5)
+						self:x(frameWidth * 0.52):zoom(fontScale):halign(0.5)
 					end,
 					SetScoreCommand = function(self)
 						self:settext(getClearTypeFromScore(PLAYER_1, score, 0)):diffuse(getClearTypeFromScore(PLAYER_1, score, 2))
@@ -488,7 +498,7 @@ local l = Def.ActorFrame {
 				-- MSD (chart difficulty)
 				LoadFont("Common Normal") .. {
 					InitCommand = function(self)
-						self:x(200):zoom(fontScale):halign(0.5)
+						self:x(frameWidth * 0.75):zoom(fontScale):halign(0.5)
 					end,
 					SetScoreCommand = function(self)
 						local ssr = score:GetSkillsetSSR("Overall")
@@ -502,7 +512,7 @@ local l = Def.ActorFrame {
 				-- Rate
 				LoadFont("Common Normal") .. {
 					InitCommand = function(self)
-						self:x(260):zoom(fontScale):halign(0.5)
+						self:x(frameWidth * 0.93):zoom(fontScale):halign(0.5)
 					end,
 					SetScoreCommand = function(self)
 						self:settextf("%.2fx", score:GetMusicRate())
@@ -531,42 +541,6 @@ local l = Def.ActorFrame {
 		end
 		return rows
 	end)(),
-	UIElements.TextToolTip(1, 1, "Common Normal") .. {
-		InitCommand = function(self)
-			self:xy(frameWidth - offsetX - frameX, frameHeight - headeroffY - 15 - offsetY):zoom(0.5):halign(1)
-			if GAMESTATE:GetCurrentSteps() == nil then
-				self:settext(translated_info["NoChart"])
-			else
-				self:settext(translated_info["NoScores"])
-			end
-		end,
-		DisplayCommand = function(self)
-			if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
-				self:settextf("%s %s - %s %d/%d", translated_info["Rate"], tostring(rates[rateIndex]), translated_info["Showing"], scoreIndex, #rtTable[rates[rateIndex]])
-				self:zoom(0.4)
-			else
-				if GAMESTATE:GetCurrentSteps() == nil then
-					self:settext(translated_info["NoChart"])
-				else
-					self:settext(translated_info["NoScores"])
-				end
-				self:zoom(0.5)
-			end
-		end,
-		MouseOverCommand = function(self)
-			self:diffusealpha(hoverAlpha)
-		end,
-		MouseOutCommand = function(self)
-			self:diffusealpha(1)
-		end,
-		MouseDownCommand = function(self, params)
-			if params.event == "DeviceButton_left mouse button" then
-				MESSAGEMAN:Broadcast("Code", {Name = "NextScore"})
-			elseif params.event == "DeviceButton_right mouse button" then
-				MESSAGEMAN:Broadcast("Code", {Name = "PrevScore"})
-			end
-		end,
-	},
 	-- Judge and ChordCohesion displays merged into the score rows
 }
 
@@ -582,8 +556,8 @@ t[#t + 1] = Def.Quad {
 		self:finishtweening()
 		self:smooth(0.15)
 		if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
-			self:zoomy(((frameHeight - offsetY) / #rtTable[rates[rateIndex]]))
-			self:y((((frameHeight - offsetY) / #rtTable[rates[rateIndex]]) * scoreIndex) + offsetY)
+			self:zoomy(((frameHeight - offsetY - 30) / #rtTable[rates[rateIndex]]) * 5)
+			self:y((((frameHeight - offsetY - 30) / #rtTable[rates[rateIndex]]) * scoreOffset) + offsetY + 30)
 		else
 			self:zoomy(0)
 		end

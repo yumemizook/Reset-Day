@@ -19,16 +19,17 @@ local function getRelativeTime(dateStr)
 	else return math.floor(diff/31536000) .. "y" end
 end
 
-local numscores = 10
+local numscores = 5
 local ind = 0
 local offx = 5
-local width = SCREEN_WIDTH * 0.40
+local width = capWideScale(get43size(400), 400)
 local dwidth = width - offx * 2
 local height = 196
+local currentAccentColor = nil
 
-local pdh = 19.6
+local pdh = 28
 local packspaceY = pdh
-local tzoom = 0.45 -- reduced slightly to fit two lines better
+local tzoom = 0.6 -- increased for larger score cards
 
 local moving
 local cheese
@@ -111,10 +112,13 @@ local o = Def.ActorFrame {
 		self:playcommand("Update")
 	end,
 	SetDynamicAccentColorMessageCommand = function(self, params)
-		-- Apply accent color to frame display
-		local frame = self:GetChild("FrameDisplay")
-		if frame and params and params.color then
-			frame:playcommand("SetDynamicAccentColor", {color = params.color})
+		-- Store and apply accent color
+		if params and params.color then
+			currentAccentColor = params.color
+			local frame = self:GetChild("FrameDisplay")
+			if frame then
+				frame:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.8)
+			end
 		end
 	end,
 	UpdateCommand = function(self)
@@ -184,10 +188,10 @@ local o = Def.ActorFrame {
 		ygap = 2
 		packspaceY = pdh + ygap
 
-		numscores = 13
+		numscores = 5
 		ind = 0
 		offx = 5
-		width = SCREEN_WIDTH * 0.56
+		width = capWideScale(get43size(400), 400)
 		dwidth = width - offx * 2
 		height = (numscores + 2) * packspaceY - packspaceY / 3
 
@@ -207,9 +211,10 @@ local o = Def.ActorFrame {
 	end,
 	UIElements.QuadButton(1, 1) .. {-- this is a nonfunctional button to mask buttons behind the window
 		Name = "FrameDisplay",
-		SetDynamicAccentColorMessageCommand = function(self, params)
-			if params and params.color then
-				self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.8)
+		InitCommand = function(self)
+			self:halign(0):valign(0):diffuse(getMainColor("tabs")):diffusealpha(0.8)
+			if currentAccentColor then
+				self:diffuse(currentAccentColor)
 			end
 		end,
 		UpdateCommand = function(self)
@@ -328,7 +333,7 @@ local o = Def.ActorFrame {
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		-- No filter button (matches local "No filter")
 		InitCommand = function(self)
-			self:xy(width - 50, 15):zoom(0.4):halign(0.5):valign(0.5)
+			self:xy(width * 0.8, 15):zoom(0.4):halign(0.5):valign(0.5)
 			self:diffuse(getMainColor("positive"))
 			self:settext("No filter")
 		end,
@@ -368,7 +373,7 @@ local o = Def.ActorFrame {
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		-- Leaderboard button - switches back to local
 		InitCommand = function(self)
-			self:xy(50, 15):zoom(0.4):halign(0.5):valign(0.5)
+			self:xy(width * 0.2, 15):zoom(0.4):halign(0.5):valign(0.5)
 			self:diffuse(getMainColor("highlight"))
 			self:settext("Leaderboard")
 		end,
@@ -392,7 +397,7 @@ local function makeScoreDisplay(i)
 	local o = Def.ActorFrame {
 		Name = "Scoredisplay_"..i,
 		InitCommand = function(self)
-			self:y(30 + packspaceY * (i - 1))
+			self:y(45 + packspaceY * (i - 1))
 		end,
 		UpdateCommand = function(self)
 			if scoretable ~= nil then

@@ -123,13 +123,22 @@ Wheel.mt = {
         return whee:getFrame(whee.index)
     end,
     update = function(whee)
-        local numFrames = #(whee.frames)
+        local numFrames = whee.count
         local idx = whee.index
         idx = idx - math.ceil(numFrames / 2)
-        for i, frame in ipairs(whee.frames) do
+        for i = 1, numFrames do
+            local frame = whee.frames[i]
             local offset = i - math.ceil(numFrames / 2) + whee.floatingOffset
-            whee.frameTransformer(frame, offset - 1, i, whee.count)
-            whee.frameUpdater(frame, whee:getItem(idx), offset)
+            if frame then
+                whee.frameTransformer(frame, offset - 1, i, numFrames)
+                -- Custom masking for Reset-Day theme
+                if (whee.y or 0) + frame:GetY() < 115 then
+                    frame:visible(false)
+                else
+                    frame:visible(true)
+                end
+                whee.frameUpdater(frame, whee:getItem(idx), offset)
+            end
             idx = idx + 1
         end
     end,

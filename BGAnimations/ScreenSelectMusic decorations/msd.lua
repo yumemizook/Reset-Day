@@ -12,57 +12,17 @@ local t = Def.ActorFrame {
 }
 
 local frameX = 20
-local frameY = 15
+local frameWidth = capWideScale(get43size(400), 400)
+-- Leaderboards start at y=103. Information bar spans from y=37 to y=103.
+local barY = 70 
+local barHeight = 66
 
--- Background for title area (top left)
-t[#t + 1] = Def.Quad {
-	InitCommand = function(self)
-		self:xy(130, 65):zoomto(400, 130):halign(0):valign(0.5):diffuse(color("#000000")):diffusealpha(0.5)
-	end,
-	SetDynamicAccentColorMessageCommand = function(self, params)
-		self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.3)
-	end
-}
-
--- Song Title - top left
-t[#t + 1] = LoadFont("Common Large") .. {
-	InitCommand = function(self)
-		self:xy(140, 40):zoom(0.6):halign(0):diffuse(color("#FFFFFF"))
-		self:maxwidth(380 / 0.6)
-	end,
-	SetCommand = function(self)
-		local song = GAMESTATE:GetCurrentSong()
-		if song then
-			self:settext(song:GetDisplayMainTitle())
-		else
-			self:settext("")
-		end
-	end
-}
-
--- Pack/Artist info below title
-t[#t + 1] = LoadFont("Common Normal") .. {
-	InitCommand = function(self)
-		self:xy(140, 65):zoom(0.4):halign(0):diffuse(color("#CCCCCC"))
-		self:maxwidth(380 / 0.4)
-	end,
-	SetCommand = function(self)
-		local song = GAMESTATE:GetCurrentSong()
-		if song then
-			local group = song:GetGroupName()
-			self:settext("🔗 " .. group)
-		else
-			self:settext("")
-		end
-	end
-}
-
--- Banner Graphic - below the text
+-- 1. Banner Graphic (Underlying)
 t[#t + 1] = Def.Sprite {
 	Name = "Banner",
 	InitCommand = function(self)
-		self:xy(140, 100):halign(0):valign(0.5)
-		self:scaletoclipped(380, 50)
+		self:xy(frameX, barY):halign(0):valign(0.5)
+		self:scaletoclipped(frameWidth, barHeight)
 	end,
 	SetCommand = function(self)
 		self:finishtweening()
@@ -74,7 +34,8 @@ t[#t + 1] = Def.Sprite {
 				bnpath = THEME:GetPathG("Common", "fallback banner")
 			end
 		else
-			bnpath = SONGMAN:GetSongGroupBannerPath(SCREENMAN:GetTopScreen():GetMusicWheel():GetSelectedSection())
+			local section = SCREENMAN:GetTopScreen():GetMusicWheel():GetSelectedSection()
+			bnpath = SONGMAN:GetSongGroupBannerPath(section)
 			if not bnpath or bnpath == "" then
 				bnpath = THEME:GetPathG("Common", "fallback banner")
 			end
@@ -83,7 +44,7 @@ t[#t + 1] = Def.Sprite {
 		if bnpath then
 			self:visible(true)
 			self:LoadBackground(bnpath)
-			self:scaletoclipped(380, 50)
+			self:scaletoclipped(frameWidth, barHeight)
 			
 			if self:GetTexture() then
 				local dominant = self:GetTexture():GetAverageColor(14)
@@ -93,6 +54,46 @@ t[#t + 1] = Def.Sprite {
 			end
 		else
 			self:visible(false)
+		end
+	end
+}
+
+-- 2. Dark Overlay for legibility
+t[#t + 1] = Def.Quad {
+	InitCommand = function(self)
+		self:xy(frameX, barY):zoomto(frameWidth, barHeight):halign(0):valign(0.5):diffuse(color("#000000")):diffusealpha(0.6)
+	end
+}
+
+-- 3. Song Title
+t[#t + 1] = LoadFont("Common Large") .. {
+	InitCommand = function(self)
+		self:xy(frameX + 10, barY - 12):zoom(0.5):halign(0):diffuse(color("#FFFFFF"))
+		self:maxwidth((frameWidth - 20) / 0.5)
+	end,
+	SetCommand = function(self)
+		local song = GAMESTATE:GetCurrentSong()
+		if song then
+			self:settext(song:GetDisplayMainTitle())
+		else
+			self:settext("")
+		end
+	end
+}
+
+-- 4. Pack Name
+t[#t + 1] = LoadFont("Common Normal") .. {
+	InitCommand = function(self)
+		self:xy(frameX + 10, barY + 12):zoom(0.4):halign(0):diffuse(color("#CCCCCC"))
+		self:maxwidth((frameWidth - 20) / 0.4)
+	end,
+	SetCommand = function(self)
+		local song = GAMESTATE:GetCurrentSong()
+		if song then
+			local group = song:GetGroupName()
+			self:settext("🔗 " .. group)
+		else
+			self:settext("")
 		end
 	end
 }

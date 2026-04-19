@@ -439,7 +439,7 @@ t[#t + 1] = Def.ActorFrame {
 			end,
 			MintyFreshCommand = function(self)
 				if score then
-					self:settextf("(%.2fx) \183 %s", score:GetMusicRate(), getScoreDateRelative(score))
+					self:settextf("(%.2fx) • %s", score:GetMusicRate(), getScoreDateRelative(score))
 				else
 					self:settext("")
 				end
@@ -467,7 +467,7 @@ t[#t + 1] = Def.ActorFrame {
 			end,
 			MintyFreshCommand = function(self)
 				if score then
-					self:settextf("(%.2fx) \183 %s", score:GetMusicRate(), getScoreDateRelative(score))
+					self:settextf("(%.2fx) • %s", score:GetMusicRate(), getScoreDateRelative(score))
 					self:diffuse(color("#00FF00"))
 				else
 					self:settext("")

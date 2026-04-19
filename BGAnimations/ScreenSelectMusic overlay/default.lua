@@ -44,6 +44,15 @@ t[#t + 1] = Def.Actor {
 	end,
 }
 
+t[#t + 1] = Def.Quad {
+	InitCommand = function(self)
+		self:xy(SCREEN_WIDTH - 480, 0):zoomto(475, 115):halign(0):valign(0):diffuse(color("#000000")):diffusealpha(1.0)
+	end,
+	SetDynamicAccentColorMessageCommand = function(self, params)
+		self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.15)
+	end
+}
+
 t[#t + 1] = LoadActor("../_frame")
 t[#t + 1] = LoadActor("../_PlayerInfo")
 

@@ -66,7 +66,7 @@ local t = Def.ActorFrame {
 	end,
 	Def.Quad {
 		InitCommand = function(self)
-			self:xy(SCREEN_CENTER_X, 60):zoomto(SCREEN_WIDTH * 0.5, 35):halign(0.5):diffuse(color("#000000")):diffusealpha(0.5)
+			self:xy(SCREEN_WIDTH - 470, 70):zoomto(460, 35):halign(0):diffuse(color("#000000")):diffusealpha(0.5)
 		end,
 		SetDynamicAccentColorMessageCommand = function(self, params)
 			self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.3)
@@ -74,7 +74,7 @@ local t = Def.ActorFrame {
 	},
 	LoadFont("Common Normal") .. {
 		InitCommand = function(self)
-			self:xy(SCREEN_CENTER_X, 60):zoom(0.6):halign(0.5)
+			self:xy(SCREEN_WIDTH - 465, 70):zoom(0.4):halign(0)
 		end,
 		UpdateStringMessageCommand = function(self)
 			if active then
