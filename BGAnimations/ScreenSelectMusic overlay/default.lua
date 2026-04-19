@@ -44,15 +44,6 @@ t[#t + 1] = Def.Actor {
 	end,
 }
 
-t[#t + 1] = Def.Quad {
-	InitCommand = function(self)
-		self:xy(SCREEN_WIDTH - 480, 0):zoomto(475, 115):halign(0):valign(0):diffuse(color("#000000")):diffusealpha(1.0)
-	end,
-	SetDynamicAccentColorMessageCommand = function(self, params)
-		self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.15)
-	end
-}
-
 t[#t + 1] = LoadActor("../_frame")
 t[#t + 1] = LoadActor("../_PlayerInfo")
 
@@ -64,16 +55,8 @@ if showVisualizer then
 		freqIntervals = audioVisualizer.multiplyIntervals(audioVisualizer.defaultIntervals, 5),
 		color = getMainColor("positive"),
 		onBarUpdate = function(self)
-			--[
 			self:diffusetopedge(getMainColor("frames"))
 			self:diffusebottomedge(getMainColor("positive"))
-			--]]
-			--[[
-			self:diffuselowerleft()
-			self:diffuseupperleft()
-			self:diffuselowerright()
-			self:diffuseupperright()
-			--]]
 		end
 	}
 	t[#t + 1] = vis
@@ -81,7 +64,6 @@ end
 
 
 t[#t + 1] = LoadActor("currentsort")
--- Title label removed as requested
 
 t[#t + 1] = LoadActor("../_cursor")
 t[#t + 1] = LoadActor("../_halppls")

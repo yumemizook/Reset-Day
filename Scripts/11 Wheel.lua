@@ -512,23 +512,6 @@ local function LegacyParams()
             InitCommand = function(self)
                 x.actor = self
             end,
-            -- Background bar for each item
-            Def.Quad {
-                Name = "BG",
-                InitCommand = function(self)
-                    self:zoomto(wheelItemWidth, 50):diffuse(color("#000000")):diffusealpha(0.7)
-                end,
-                SetDynamicAccentColorMessageCommand = function(self, params)
-                    self:finishtweening():linear(0.15):diffuse(params.color):diffusealpha(0.25)
-                end
-            },
-            -- Top separator line
-            Def.Quad {
-                Name = "TopLine",
-                InitCommand = function(self)
-                    self:y(-25):zoomto(wheelItemWidth, 1):diffuse(color("#333333")):diffusealpha(0.5)
-                end
-            },
             -- Title (bold, left-aligned)
             LoadFont("Common Large") .. {
                 Name = "Title",
