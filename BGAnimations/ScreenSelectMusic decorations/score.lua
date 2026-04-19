@@ -18,8 +18,8 @@ local currentAccentColor = nil
 local frameX = 20
 local frameY = 70
 local frameWidth = SCREEN_WIDTH * 0.40
-local frameHeight = 280
-local fontScale = 0.35
+local frameHeight = 196
+local fontScale = 0.25
 local function getRelativeTime(dateStr)
 	if not dateStr or dateStr == "" then return "" end
 	local y, m, d, h, min, s = dateStr:match("(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)")
@@ -99,47 +99,11 @@ local hoverAlpha = 0.6
 local moped
 -- Only works if ... it should work
 -- You know, if we can see the place where the scores should be.
-local function updateLeaderBoardForCurrentChart()
-	local top = SCREENMAN:GetTopScreen()
-	if top:GetName() == "ScreenSelectMusic" or top:GetName() == "ScreenNetSelectMusic" then
-		if top:GetMusicWheel():IsSettled() and ((getTabIndex() == 2 and nestedTab == 2) or collapsed) then
-			local steps = GAMESTATE:GetCurrentSteps()
-			if steps then
-				local leaderboardAttempt = DLMAN:GetChartLeaderBoard(steps:GetChartKey())
-				if leaderboardAttempt ~= nil and #leaderboardAttempt > 0 then
-					moped:playcommand("SetFromLeaderboard", leaderboardAttempt)
-				elseif leaderboardAttempt ~= nil and #leaderboardAttempt == 0 then
-					DLMAN:RequestChartLeaderBoardFromOnline(
-						steps:GetChartKey(),
-						function(leaderboard)
-							moped:queuecommand("SetFromLeaderboard", leaderboard)
-						end
-					)
-				else
-					moped:queuecommand("SetFromLeaderboard", nil)
-				end
-			else
-				moped:playcommand("SetFromLeaderboard", {})
-			end
-		end
-	end
-end
-
 local ret = Def.ActorFrame {
 	Name = "Scoretab",
 	BeginCommand = function(self)
-		moped = self:GetChild("ScoreDisplay")
 		self:queuecommand("Set"):visible(true)
-		-- Start with local scores visible, online hidden (default nestedTab = 1)
 		self:GetChild("LocalScores"):xy(frameX, frameY):visible(true)
-		moped:xy(frameX, frameY):visible(false)
-
-		if FILTERMAN:oopsimlazylol() then -- set saved position and auto collapse (switch to online)
-			nestedTab = 2
-			self:GetChild("LocalScores"):visible(false)
-			moped:xy(FILTERMAN:grabposx("Doot"), FILTERMAN:grabposy("Doot")):visible(true)
-			self:playcommand("Collapse")
-		end
 	end,
 	OffCommand = function(self)
 		self:bouncebegin(0.2):xy(-500, 0):diffusealpha(0)
@@ -148,19 +112,11 @@ local ret = Def.ActorFrame {
 	InvisCommand= function(self)
 		self:visible(false)
 		self:GetChild("LocalScores"):visible(false)
-		self:GetChild("ScoreDisplay"):visible(false)
 	end,
 	OnCommand = function(self)
 		self:bouncebegin(0.2):xy(0, 0):diffusealpha(1)
-		-- Default: show local (nestedTab = 1), hide online
 		if getTabIndex() == 2 then
-			if nestedTab == 1 then
-				self:GetChild("LocalScores"):visible(true)
-				self:GetChild("ScoreDisplay"):visible(false)
-			else
-				self:GetChild("LocalScores"):visible(false)
-				self:GetChild("ScoreDisplay"):visible(true)
-			end
+			self:GetChild("LocalScores"):visible(true)
 		end
 	end,
 	SetCommand = function(self)
@@ -170,30 +126,8 @@ local ret = Def.ActorFrame {
 		self:queuecommand("On")
 		self:visible(true)
 	end,
-	TabChangedMessageCommand = function(self, params)
-		self:queuecommand("Set")
-		-- if tab was already visible, swap nested tabs
-		if params ~= nil and params.from == 2 and params.to == 2 and self:GetVisible() and not collapsed then
-			if nestedTab == 1 then nestedTab = 2 else nestedTab = 1 end
-			local sd = self:GetParent():GetChild("StepsDisplay")
-			self:GetChild("Button_1"):playcommand("NestedTabChanged")
-			self:GetChild("Button_2"):playcommand("NestedTabChanged")
-			if nestedTab == 1 then
-				self:GetChild("ScoreDisplay"):visible(false)
-				self:GetChild("LocalScores"):visible(true)
-				sd:visible(true)
-			else
-				updateLeaderBoardForCurrentChart()
-				self:GetChild("ScoreDisplay"):visible(true)
-				self:GetChild("LocalScores"):visible(false)
-				sd:visible(false)
-			end
-		end
-		updateLeaderBoardForCurrentChart()
-	end,
 	ChangeStepsMessageCommand = function(self)
 		self:queuecommand("Set")
-		updateLeaderBoardForCurrentChart()
 	end,
 	CollapseCommand = function(self)
 		collapsed = true
@@ -208,7 +142,6 @@ local ret = Def.ActorFrame {
 			setTabIndex(2)
 		end
 		local after = getTabIndex()
-		self:GetChild("ScoreDisplay"):xy(frameX, frameY)
 		MESSAGEMAN:Broadcast("TabChanged", {from = tind, to = after})
 	end,
 	DelayedChartUpdateMessageCommand = function(self)
@@ -238,11 +171,13 @@ local ret = Def.ActorFrame {
 		-- Toggle visibility between local and online leaderboards
 		if nestedTab == 1 then
 			self:GetChild("LocalScores"):visible(true)
-			self:GetChild("ScoreDisplay"):visible(false)
+			if moped then moped:visible(false) end
 		else
 			self:GetChild("LocalScores"):visible(false)
-			self:GetChild("ScoreDisplay"):visible(true)
-			updateLeaderBoardForCurrentChart()
+			if moped then 
+				moped:visible(true)
+				moped:playcommand("GetFilteredLeaderboard")
+			end
 		end
 		-- Broadcast accent color to ensure both leaderboards have it
 		if currentAccentColor then
@@ -253,7 +188,7 @@ local ret = Def.ActorFrame {
 		-- Handle request from online leaderboard to switch back to local
 		nestedTab = 1
 		self:GetChild("LocalScores"):visible(true)
-		self:GetChild("ScoreDisplay"):visible(false)
+		if moped then moped:visible(false) end
 		-- Update button text in LocalScores
 		local btn = self:GetChild("LocalScores"):GetChild("YourScoresBtn")
 		if btn then
@@ -361,9 +296,6 @@ local t = Def.ActorFrame {
 	end,
 	CurrentStepsChangedMessageCommand = function(self)
 		self:playcommand("On")
-		if rtTable == nil or #rtTable == 0 or rates == nil or #rates == 0 or rates[rateIndex] == nil or rtTable[rates[rateIndex]] == nil then
-			return
-		end
 		self:playcommand("Display")
 	end,
 	CodeMessageCommand = function(self, params)
@@ -398,9 +330,19 @@ local t = Def.ActorFrame {
 		self:queuecommand("Display")
 	end,
 	DisplayCommand = function(self)
-		score = rtTable[rates[rateIndex]][scoreIndex]
-		hasReplayData = score:HasReplayData()
-		setScoreForPlot(score)
+		if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
+			score = rtTable[rates[rateIndex]][scoreIndex]
+			if score then
+				hasReplayData = score:HasReplayData()
+				setScoreForPlot(score)
+			else
+				score = nil
+				hasReplayData = false
+			end
+		else
+			score = nil
+			hasReplayData = false
+		end
 	end,
 	Def.Quad {
 		Name = "FrameDisplay",
@@ -490,7 +432,7 @@ local l = Def.ActorFrame {
 			rows[#rows + 1] = Def.ActorFrame {
 				Name = "ScoreRow" .. i,
 				InitCommand = function(self)
-					self:y(20 + (i-1) * 28)
+					self:y(20 + (i-1) * 19.6)
 				end,
 				DisplayCommand = function(self)
 					if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
@@ -521,10 +463,16 @@ local l = Def.ActorFrame {
 					end,
 					SetScoreCommand = function(self)
 						local perc = score:GetWifeScore() * 100
+						
+						local j = table.find(ms.JudgeScalers, notShit.round(score:GetJudgeScale(), 2))
+						if not j then j = 4 end
+						if j < 4 then j = 4 end
+						local jStr = " [J" .. j .. "]"
+						
 						if perc > 99.65 then
-							self:settextf("%.4f%%", perc):diffuse(getGradeColor(score:GetWifeGrade()))
+							self:settextf("%.4f%%%s", perc, jStr):diffuse(getGradeColor(score:GetWifeGrade()))
 						else
-							self:settextf("%.2f%%", perc):diffuse(getGradeColor(score:GetWifeGrade()))
+							self:settextf("%.2f%%%s", perc, jStr):diffuse(getGradeColor(score:GetWifeGrade()))
 						end
 					end
 				},
@@ -543,10 +491,9 @@ local l = Def.ActorFrame {
 						self:x(200):zoom(fontScale):halign(0.5)
 					end,
 					SetScoreCommand = function(self)
-						local steps = GAMESTATE:GetCurrentSteps()
-						if steps then
-							local msd = steps:GetMSD(score:GetMusicRate(), 1)
-							self:settextf("%.2f", msd):diffuse(byMSD(msd))
+						local ssr = score:GetSkillsetSSR("Overall")
+						if ssr and ssr > 0 then
+							self:settextf("%.2f", ssr):diffuse(byMSD(ssr))
 						else
 							self:settext("--")
 						end
@@ -559,6 +506,25 @@ local l = Def.ActorFrame {
 					end,
 					SetScoreCommand = function(self)
 						self:settextf("%.2fx", score:GetMusicRate())
+					end
+				},
+				-- Clickable background to trigger Eval Screen
+				UIElements.QuadButton(1, 1) .. {
+					InitCommand = function(self)
+						self:xy(130, 0):zoomto(300, 19.6):diffusealpha(0)
+					end,
+					MouseOverCommand = function(self)
+						if score then self:finishtweening():diffusealpha(0.1) end
+					end,
+					MouseOutCommand = function(self)
+						self:finishtweening():diffusealpha(0)
+					end,
+					MouseDownCommand = function(self, params)
+						if nestedTab == 1 and params.event == "DeviceButton_left mouse button" and score then
+							if SCREENMAN:GetTopScreen():GetName() ~= "ScreenNetSelectMusic" then
+								SCREENMAN:GetTopScreen():ShowEvalScreenForScore(score)
+							end
+						end
 					end
 				}
 			}
@@ -575,8 +541,17 @@ local l = Def.ActorFrame {
 			end
 		end,
 		DisplayCommand = function(self)
-			self:settextf("%s %s - %s %d/%d", translated_info["Rate"], rates[rateIndex], translated_info["Showing"], scoreIndex, #rtTable[rates[rateIndex]])
-			self:zoom(0.4)
+			if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
+				self:settextf("%s %s - %s %d/%d", translated_info["Rate"], tostring(rates[rateIndex]), translated_info["Showing"], scoreIndex, #rtTable[rates[rateIndex]])
+				self:zoom(0.4)
+			else
+				if GAMESTATE:GetCurrentSteps() == nil then
+					self:settext(translated_info["NoChart"])
+				else
+					self:settext(translated_info["NoScores"])
+				end
+				self:zoom(0.5)
+			end
 		end,
 		MouseOverCommand = function(self)
 			self:diffusealpha(hoverAlpha)
@@ -592,399 +567,10 @@ local l = Def.ActorFrame {
 			end
 		end,
 	},
-	LoadFont("Common Normal") .. {
-		Name = "Judge",
-		InitCommand = function(self)
-			self:xy(frameX + offsetX + 55,frameHeight - headeroffY - 65 - offsetY):zoom(0.45):halign(0.5):settext("")
-		end,
-		DisplayCommand = function(self)
-			local j = table.find(ms.JudgeScalers, notShit.round(score:GetJudgeScale(), 2))
-			if not j then j = 4 end
-			if j < 4 then j = 4 end
-			self:settextf("%s %i", translated_info["Judge"], j)
-		end
-	},
-	LoadFont("Common Normal") .. {
-		Name = "ChordCohesion",
-		InitCommand = function(self)
-			self:xy(frameX + offsetX + 55,frameHeight - headeroffY - 50 - offsetY):zoom(0.4):halign(0.5):settext("")
-		end,
-		DisplayCommand = function(self)
-			if score:GetChordCohesion() then
-				self:settextf("%s: %s", translated_info["ChordCohesion"], translated_info["Yes"])
-				self:diffuse(1,0,0,1)
-			else
-				self:settextf("%s: %s", translated_info["ChordCohesion"], translated_info["No"])
-				self:diffuse(1,1,1,1)
-			end
-		end
-	},
+	-- Judge and ChordCohesion displays merged into the score rows
 }
 
-local function makeText(index)
-	return UIElements.TextToolTip(1, 1, "Common Normal") .. {
-		InitCommand = function(self)
-			self:xy(frameWidth - frameX, offsetY + 100 + (index * 15)):zoom(fontScale + 0.05):halign(1):settext("")
-		end,
-		DisplayCommand = function(self)
-			local count = 0
-			if rtTable[rates[index]] ~= nil then
-				count = #rtTable[rates[index]]
-			end
-			if index <= #rates then
-				self:settextf("%s (%d)", rates[index], count)
-				if index == rateIndex then
-					self:diffuse(color("#FFFFFF"))
-				else
-					self:diffuse(getMainColor("positive"))
-				end
-			else
-				self:settext("")
-			end
-		end,
-		MouseOverCommand = function(self)
-			if index ~= rateIndex then
-				self:diffusealpha(hoverAlpha)
-			end
-		end,
-		MouseOutCommand = function(self)
-			if index ~= rateIndex then
-				self:diffusealpha(1)
-			end
-		end,
-		MouseDownCommand = function(self, params)
-			if nestedTab == 1 and params.event == "DeviceButton_left mouse button" then
-				rateIndex = index
-				scoreIndex = 1
-				self:GetParent():queuecommand("Display")
-			end
-		end
-	}
-end
-
-for i = 1, 9 do
-	t[#t + 1] = makeText(i)
-end
-
-local function makeJudge(index, judge)
-	local t = Def.ActorFrame {
-		InitCommand = function(self)
-			self:y(129 + ((index - 1) * 18))
-		end
-	}
-
-	--labels
-	t[#t + 1] = LoadFont("Common Normal") .. {
-		InitCommand = function(self)
-			self:zoom(0.55):halign(0)
-		end,
-		BeginCommand = function(self)
-			self:settext(getJudgeStrings(judge))
-			self:diffuse(byJudgment(judge))
-		end
-	}
-
-	t[#t + 1] = LoadFont("Common Normal") .. {
-		InitCommand = function(self)
-			self:x(127):zoom(0.55):halign(1):settext("0")
-		end,
-		DisplayCommand = function(self)
-			if judge ~= "HoldNoteScore_Held" and judge ~= "HoldNoteScore_LetGo" then
-				self:settext(getScoreTapNoteScore(score, judge))
-			else
-				self:settext(getScoreHoldNoteScore(score, judge))
-			end
-		end
-	}
-
-	t[#t + 1] = LoadFont("Common Normal") .. {
-		InitCommand = function(self)
-			self:x(130):zoom(0.3):halign(0):settext("")
-		end,
-		DisplayCommand = function(self)
-			if judge ~= "HoldNoteScore_Held" and judge ~= "HoldNoteScore_LetGo" then
-				local taps = math.max(1, getMaxNotes(pn))
-				local count = getScoreTapNoteScore(score, judge)
-				self:settextf("(%03.2f%%)", (count / taps) * 100)
-			else
-				local holds = math.max(1, getMaxHolds(pn))
-				local count = getScoreHoldNoteScore(score, judge)
-				self:settextf("(%03.2f%%)", (count / holds) * 100)
-			end
-		end
-	}
-
-	return t
-end
-
-for i = 1, #judges do
-	--l[#l + 1] = makeJudge(i, judges[i]) -- Hide judges to condense UI
-end
-
-l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
-	Name = "Score",
-	InitCommand = function(self)
-		self:y(frameHeight - headeroffY - 31 - offsetY):zoom(0.55):halign(0):settext("")
-		self:diffuse(getMainColor("positive"))
-	end,
-	DisplayCommand = function(self)
-		if hasReplayData then
-			self:settext(translated_info["ShowOffset"])
-		else
-			self:settext("")
-		end
-	end,
-	MouseOverCommand = function(self)
-		if hasReplayData then
-			self:diffusealpha(hoverAlpha)
-		end
-	end,
-	MouseOutCommand = function(self)
-		if hasReplayData then
-			self:diffusealpha(1)
-		end
-	end,
-	MouseDownCommand = function(self, params)
-		if nestedTab == 1 and params.event == "DeviceButton_left mouse button" then
-			if getTabIndex() == 2 and getScoreForPlot() and hasReplayData and isOver(self) then
-				SCREENMAN:AddNewScreenToTop("ScreenScoreTabOffsetPlot")
-			end
-		end
-	end,
-}
-l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
-	Name = "ReplayViewer",
-	InitCommand = function(self)
-		self:y(frameHeight - headeroffY - 15 - offsetY):zoom(0.55):halign(0):settext("")
-		self:diffuse(getMainColor("positive"))
-	end,
-	BeginCommand = function(self)
-		if SCREENMAN:GetTopScreen():GetName() == "ScreenNetSelectMusic" then
-			self:visible(false)
-		end
-	end,
-	DisplayCommand = function(self)
-		if hasReplayData then
-			self:settext(translated_info["ShowReplay"])
-			self:diffuse(getMainColor("positive")):zoom(0.55)
-		else
-			self:settext(translated_info["NoReplayData"])
-			self:diffuse(1,1,1,1):zoom(0.4)
-		end
-	end,
-	MouseOverCommand = function(self)
-		if hasReplayData then
-			self:diffusealpha(hoverAlpha)
-		end
-	end,
-	MouseOutCommand = function(self)
-		if hasReplayData then
-			self:diffusealpha(1)
-		end
-	end,
-	MouseDownCommand = function(self, params)
-		if nestedTab == 1 and params.event == "DeviceButton_left mouse button" then
-			if getTabIndex() == 2 and getScoreForPlot() and hasReplayData and isOver(self) then
-				SCREENMAN:GetTopScreen():PlayReplay(score)
-			end
-		end
-	end
-}
-l[#l + 1] = Def.ActorFrame {
-	InitCommand = function(self)
-		if not IsUsingWideScreen() then --offset it a bit if not using widescreen
-			self:x(6):y(37):zoom(0.9)
-		end
-	end,
-	UIElements.QuadButton(1, 1) .. {
-		Name = "EvalViewQuad",
-		InitCommand = function(self)
-			self:xy((frameWidth - offsetX - frameX) / 2.1, frameHeight - headeroffY - 17 - offsetY):diffuse(0,0,0,0)
-			self:zoomtowidth(145):zoomtoheight(21)
-		end,
-		BeginCommand = function(self)
-			if SCREENMAN:GetTopScreen():GetName() == "ScreenNetSelectMusic" then
-				self:visible(false)
-			end
-		end,
-		DisplayCommand = function(self)
-			if hasReplayData then
-				self:diffusealpha(0.3)
-			else
-				self:diffusealpha(0)
-			end
-		end,
-		MouseOverCommand = function(self)
-			self:GetParent():GetChild("EvalViewer"):diffusealpha(0.6)
-		end,
-		MouseOutCommand = function(self)
-			self:GetParent():GetChild("EvalViewer"):diffusealpha(1)
-		end,
-		MouseDownCommand = function(self, params)
-			if nestedTab == 1 and params.event == "DeviceButton_left mouse button" then
-				if getTabIndex() == 2 and getScoreForPlot() and hasReplayData and isOver(self) then
-					SCREENMAN:GetTopScreen():ShowEvalScreenForScore(score)
-				end
-			end
-		end,
-	},
-	LoadFont("Common Large") .. {
-		Name = "EvalViewer",
-		InitCommand = function(self)
-			self:xy((frameWidth - offsetX - frameX) / 2.1, frameHeight - headeroffY - 18 - offsetY):zoom(0.35):settext("")
-			self:diffuse(getMainColor("positive"))
-		end,
-		BeginCommand = function(self)
-			if SCREENMAN:GetTopScreen():GetName() == "ScreenNetSelectMusic" then
-				self:visible(false)
-			end
-		end,
-		DisplayCommand = function(self)
-			if hasReplayData then
-				self:settext(translated_info["ShowEval"])
-			else
-				self:settext("")
-			end
-		end,
-	},
-}
-
-l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
-	Name = "TheDootButton",
-	InitCommand = function(self)
-		self:xy(frameWidth - offsetX - frameX, frameHeight - headeroffY - 35 - offsetY):zoom(0.525):halign(1):settext("")
-		self:diffuse(getMainColor("positive"))
-	end,
-	DisplayCommand = function(self)
-		self:settext(translated_info["UploadReplay"])
-	end,
-	MouseOverCommand = function(self)
-		self:diffusealpha(hoverAlpha)
-	end,
-	MouseOutCommand = function(self)
-		self:diffusealpha(1)
-	end,
-	MouseDownCommand = function(self, params)
-		if nestedTab == 1 and params.event == "DeviceButton_left mouse button" then
-			if getTabIndex() == 2 and isOver(self) and DLMAN:IsLoggedIn() then
-				DLMAN:SendReplayDataForOldScore(score:GetScoreKey())
-				ms.ok(translated_info["UploadingReplay"]) --should have better feedback -mina
-			elseif getTabIndex() == 2 and isOver(self) and not DLMAN:IsLoggedIn() then
-				ms.ok(translated_info["NotLoggedIn"])
-			end
-		end
-	end
-}
-l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
-	Name = "TheDootButtonTWO",
-	InitCommand = function(self)
-		self:xy(frameWidth - offsetX - frameX, frameHeight - headeroffY - 49 - offsetY):zoom(0.425):halign(1):settext("")
-		self:diffuse(getMainColor("positive"))
-	end,
-	DisplayCommand = function(self)
-		self:settext(translated_info["UploadAllScoreChart"])
-	end,
-	MouseOverCommand = function(self)
-		self:diffusealpha(hoverAlpha)
-	end,
-	MouseOutCommand = function(self)
-		self:diffusealpha(1)
-	end,
-	MouseDownCommand = function(self, params)
-		if nestedTab == 1 and params.event == "DeviceButton_left mouse button" then
-			if getTabIndex() == 2 and isOver(self) and DLMAN:IsLoggedIn() then
-				DLMAN:UploadScoresForChart(score:GetChartKey())
-			elseif getTabIndex() == 2 and isOver(self) and not DLMAN:IsLoggedIn() then
-				ms.ok(translated_info["NotLoggedIn"])
-			end
-		end
-	end
-}
-l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
-	Name = "TheDootButtonTHREEEEEEEE",
-	InitCommand = function(self)
-		self:xy(frameWidth - offsetX - frameX, frameHeight - headeroffY - 63 - offsetY):zoom(0.425):halign(1):settext("")
-		self:diffuse(getMainColor("positive"))
-	end,
-	DisplayCommand = function(self)
-		self:settext(translated_info["UploadAllScorePack"])
-	end,
-	MouseOverCommand = function(self)
-		self:diffusealpha(hoverAlpha)
-	end,
-	MouseOutCommand = function(self)
-		self:diffusealpha(1)
-	end,
-	MouseDownCommand = function(self, params)
-		if nestedTab == 1 and params.event == "DeviceButton_left mouse button" then
-			if getTabIndex() == 2 and isOver(self) and DLMAN:IsLoggedIn() then
-				DLMAN:UploadScoresForPack(GAMESTATE:GetCurrentSong():GetGroupName())
-			elseif getTabIndex() == 2 and isOver(self) and not DLMAN:IsLoggedIn() then
-				ms.ok(translated_info["NotLoggedIn"])
-			end
-		end
-	end
-}
-l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
-	Name = "TheDootButtonFOUR",
-	InitCommand = function(self)
-		self:xy(frameWidth - offsetX - frameX, frameHeight - headeroffY - 77 - offsetY):zoom(0.425):halign(1):settext("")
-		self:diffuse(getMainColor("positive"))
-	end,
-	DisplayCommand = function(self)
-		self:settext(translated_info["UploadAllScore"])
-	end,
-	MouseOverCommand = function(self)
-		self:diffusealpha(hoverAlpha)
-	end,
-	MouseOutCommand = function(self)
-		self:diffusealpha(1)
-	end,
-	MouseDownCommand = function(self, params)
-		if nestedTab == 1 and params.event == "DeviceButton_left mouse button" then
-			if getTabIndex() == 2 and isOver(self) and DLMAN:IsLoggedIn() then
-				DLMAN:UploadAllScores()
-			elseif getTabIndex() == 2 and isOver(self) and not DLMAN:IsLoggedIn() then
-				ms.ok(translated_info["NotLoggedIn"])
-			end
-		end
-	end
-}
-l[#l + 1] = UIElements.TextToolTip(1, 1, "Common Normal") .. {
-	Name = "ValidateInvalidateScoreButton",
-	InitCommand = function(self)
-		self:xy(frameWidth - offsetX - frameX, frameHeight - headeroffY - 91 - offsetY):zoom(0.425):halign(1):settext("")
-		self:diffuse(getMainColor("positive"))
-	end,
-	DisplayCommand = function(self)
-        if score:GetEtternaValid() then
-            self:settext(translated_info["InvalidateScore"])
-        else
-            self:settext(translated_info["ValidateScore"])
-        end
-	end,
-	MouseOverCommand = function(self)
-		self:diffusealpha(hoverAlpha)
-	end,
-	MouseOutCommand = function(self)
-		self:diffusealpha(1)
-	end,
-	MouseDownCommand = function(self, params)
-		if nestedTab == 1 and params.event == "DeviceButton_left mouse button" then
-			if getTabIndex() == 2 and isOver(self) then
-                score:ToggleEtternaValidation()
-                MESSAGEMAN:Broadcast("UpdateRanking")
-				if score:GetEtternaValid() then
-					ms.ok(translated_info["ScoreValidated"])
-                    self:settext(translated_info["InvalidateScore"])
-                else
-                    ms.ok(translated_info["ScoreInvalidated"])
-                    self:settext(translated_info["ValidateScore"])
-				end
-			end
-		end
-	end
-}
+-- Obsolete rate list and interaction buttons removed here
 t[#t + 1] = l
 
 t[#t + 1] = Def.Quad {
@@ -995,87 +581,22 @@ t[#t + 1] = Def.Quad {
 	DisplayCommand = function(self)
 		self:finishtweening()
 		self:smooth(0.15)
-		self:zoomy(((frameHeight - offsetY) / #rtTable[rates[rateIndex]]))
-		self:y((((frameHeight - offsetY) / #rtTable[rates[rateIndex]]) * scoreIndex) + offsetY)
+		if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
+			self:zoomy(((frameHeight - offsetY) / #rtTable[rates[rateIndex]]))
+			self:y((((frameHeight - offsetY) / #rtTable[rates[rateIndex]]) * scoreIndex) + offsetY)
+		else
+			self:zoomy(0)
+		end
 	end
 }
 
 ret[#ret + 1] = t
 
-local function nestedTabButton(i)
-	return Def.ActorFrame {
-		Name = "Button_"..i,
-		InitCommand = function(self)
-			self:xy(frameX + offsetX/2 + (i - 1) * (nestedTabButtonWidth - capWideScale(100, 80)), frameY + offsetY - 4)
-			-- Only show if on Scores tab
-			self:visible(getTabIndex() == 2)
-		end,
-		TabChangedMessageCommand = function(self)
-			self:visible(getTabIndex() == 2)
-		end,
-		CollapseCommand = function(self)
-			self:visible(false)
-		end,
-		ExpandCommand = function(self)
-			self:visible(getTabIndex() == 2)
-		end,
-		UIElements.TextToolTip(1, 1, "Common Normal") .. {
-			InitCommand = function(self)
-				self:diffuse(getMainColor("positive")):maxwidth(nestedTabButtonWidth - 80):maxheight(40):zoom(0.65)
-				self:settext(nestedTabs[i])
-				self:halign(0):valign(1)
-				self.hoverDiffusefunction = function(self)
-					local inTabNotHovered = 1
-					local offTabNotHovered = 0.6
-					local offTabHovered = 0.8
-					local inTabHovered = 0.6
-					if isOver(self) then
-						if nestedTab == i then
-							self:diffusealpha(inTabHovered)
-						else
-							self:diffusealpha(offTabHovered)
-						end
-					else
-						if nestedTab == i then
-							self:diffusealpha(inTabNotHovered)
-						else
-							self:diffusealpha(offTabNotHovered)
-						end
-					end
-				end
-				self:hoverDiffusefunction()
-			end,
-			MouseOverCommand = function(self)
-				self:hoverDiffusefunction()
-			end,
-			MouseOutCommand = function(self)
-				self:hoverDiffusefunction()
-			end,
-			NestedTabChangedMessageCommand = function(self)
-				self:hoverDiffusefunction()
-			end,
-			MouseDownCommand = function(self, params)
-				if params.event == "DeviceButton_left mouse button" then
-					nestedTab = i
-					MESSAGEMAN:Broadcast("NestedTabChanged")
-					if nestedTab == 1 then
-						self:GetParent():GetParent():GetChild("ScoreDisplay"):visible(false)
-						self:GetParent():GetParent():GetParent():GetChild("StepsDisplay"):visible(true)
-					else
-						self:GetParent():GetParent():GetChild("ScoreDisplay"):visible(true)
-						self:GetParent():GetParent():GetParent():GetChild("StepsDisplay"):visible(false)
-					end
-				end
-			end
-		}
-	}
-end
-
--- online score display
-ret[#ret + 1] = LoadActor("../superscoreboard")
-
-for i = 1, #nestedTabs do
-	ret[#ret + 1] = nestedTabButton(i)
-end
+ret[#ret + 1] = LoadActor("../superscoreboard") .. {
+	InitCommand = function(self)
+		moped = self
+		self:xy(frameX, frameY):visible(false)
+	end
+}
 
 return ret

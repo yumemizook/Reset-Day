@@ -45,7 +45,8 @@ t[#t + 1] = headerButton(40, "Options", "⚙", function() SCREENMAN:GetTopScreen
 t[#t + 1] = headerButton(115, "Import", "📥", function() SCREENMAN:SetNewScreen("ScreenPackDownloader") end)
 t[#t + 1] = headerButton(185, "Stats", "📈", function() SCREENMAN:SetNewScreen("ScreenProfileStats") end)
 
--- Profile/Login area
+-- Profile/Login area (Handled by _PlayerInfo.lua now to avoid overlap)
+--[[
 t[#t + 1] = UIElements.QuadButton(1, 1) .. {
 	Name = "LoginArea",
 	InitCommand = function(self)
@@ -78,6 +79,8 @@ t[#t + 1] = LoadFont("Common Normal") .. {
 	DLMANLoginMessageCommand = function(self) self:playcommand("UpdateLoginStatus") end,
 	DLMANLogoutMessageCommand = function(self) self:playcommand("UpdateLoginStatus") end
 }
+]]
+
 
 --FrameBorders
 t[#t + 1] = Def.Quad {

@@ -15,8 +15,8 @@ if not leaderboardEnabled then
 end
 local CRITERIA = "GetWifeScore"
 local NUM_ENTRIES = 5
-local ENTRY_HEIGHT = IsUsingWideScreen() and 35 or 20
-local WIDTH = SCREEN_WIDTH * (IsUsingWideScreen() and 0.3 or 0.275)
+local ENTRY_HEIGHT = IsUsingWideScreen() and 25 or 15
+local WIDTH = SCREEN_WIDTH * (IsUsingWideScreen() and 0.22 or 0.2)
 local jdgs = {
 	-- Table of judgments for the judgecounter
 	"TapNoteScore_W1",
