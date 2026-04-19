@@ -4,11 +4,23 @@ local t = Def.ActorFrame {
 		self:visible(true)
 	end,
 	CurrentStepsChangedMessageCommand = function(self)
-		self:queuecommand("Set")
+		-- lag begone
+		-- this was borrewed from wifetwirl because someone was stupid enought to let everything update very quickly (not goodo) -ifwas
+		local topscr = SCREENMAN:GetTopScreen()
+
+		if fuckkkkkkkkkkkkkkkkkkk ~= nil then
+			topscr:clearInterval(fuckkkkkkkkkkkkkkkkkkk)
+			fuckkkkkkkkkkkkkkkkkkk = nil
+		end
+		fuckkkkkkkkkkkkkkkkkkk = topscr:setInterval(function()
+			self:queuecommand("updateMeta")
+			if fuckkkkkkkkkkkkkkkkkkk ~= nil then
+				topscr:clearInterval(fuckkkkkkkkkkkkkkkkkkk)
+				fuckkkkkkkkkkkkkkkkkkk = nil
+			end
+		end,
+		0.045)
 	end,
-	CurrentSongChangedMessageCommand = function(self)
-		self:queuecommand("Set")
-	end
 }
 
 local frameX = 20
@@ -24,7 +36,7 @@ t[#t + 1] = Def.Sprite {
 		self:xy(frameX, barY):halign(0):valign(0.5)
 		self:scaletoclipped(frameWidth, barHeight)
 	end,
-	SetCommand = function(self)
+	updateMetaCommand = function(self)
 		self:finishtweening()
 		local song = GAMESTATE:GetCurrentSong()
 		local bnpath
@@ -48,9 +60,7 @@ t[#t + 1] = Def.Sprite {
 			
 			if self:GetTexture() then
 				local dominant = self:GetTexture():GetAverageColor(14)
-				if dominant then
-					MESSAGEMAN:Broadcast("SetDynamicAccentColor", {color = dominant})
-				end
+				MESSAGEMAN:Broadcast("SetDynamicAccentColor", {color = dominant})
 			end
 		else
 			self:visible(false)
@@ -71,7 +81,7 @@ t[#t + 1] = LoadFont("Common Large") .. {
 		self:xy(frameX + 10, barY - 12):zoom(0.5):halign(0):diffuse(color("#FFFFFF"))
 		self:maxwidth((frameWidth - 20) / 0.5)
 	end,
-	SetCommand = function(self)
+	updateMetaCommand = function(self)
 		local song = GAMESTATE:GetCurrentSong()
 		if song then
 			self:settext(song:GetDisplayMainTitle())
@@ -87,7 +97,7 @@ t[#t + 1] = LoadFont("Common Normal") .. {
 		self:xy(frameX + 10, barY + 12):zoom(0.4):halign(0):diffuse(color("#CCCCCC"))
 		self:maxwidth((frameWidth - 20) / 0.4)
 	end,
-	SetCommand = function(self)
+	updateMetaCommand = function(self)
 		local song = GAMESTATE:GetCurrentSong()
 		if song then
 			local group = song:GetGroupName()

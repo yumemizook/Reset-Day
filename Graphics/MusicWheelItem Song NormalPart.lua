@@ -63,10 +63,7 @@ return Def.ActorFrame {
                     end
                 end
             elseif params.event == "DeviceButton_right mouse button" then
-                -- right click opens playlists
-                local tind = getTabIndex()
-	    		setTabIndex(7)
-    			MESSAGEMAN:Broadcast("TabChanged", {from = tind, to = 7})
+                -- right click doees something but not sure what yet
             end
 		end,
 	},
