@@ -1,7 +1,7 @@
 -- theme identification file
 
 themeInfo = {
-	Name = "'Til Death",
+	Name = "Chorus",
 	Version = "1.11",
 	Date = "20250111"
 }
