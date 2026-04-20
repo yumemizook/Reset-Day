@@ -4,6 +4,11 @@ local pressingtab = false
 local top
 
 local function scrollInput(event)
+	local button = event.DeviceInput and event.DeviceInput.button or nil
+	if getenv("StatsOverlayActive") and (button == "DeviceButton_mousewheel up" or button == "DeviceButton_mousewheel down") then
+		MESSAGEMAN:Broadcast("StatsOverlayMouseWheel", {direction = button == "DeviceButton_mousewheel up" and "up" or "down"})
+		return true
+	end
 	if top:GetName() == "ScreenSelectmusic" then
 		if top:GetSelectionState() == 2 then
 			return

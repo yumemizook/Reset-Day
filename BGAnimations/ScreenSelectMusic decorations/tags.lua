@@ -122,6 +122,13 @@ local t = Def.ActorFrame {
 		end
 	end,
 	TabChangedMessageCommand = function(self)
+		if getTabIndex() ~= 9 and hasFocus then
+			hasFocus = false
+			curInput = ""
+			SCREENMAN:set_input_redirected(PLAYER_1, false)
+			MESSAGEMAN:Broadcast("NumericInputEnded")
+			MESSAGEMAN:Broadcast("RefreshTags")
+		end
 		self:playcommand("BORPBORPNORFNORFc")
 	end,
 	CurrentStepsChangedMessageCommand = function(self)

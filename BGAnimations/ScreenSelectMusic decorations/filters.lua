@@ -125,7 +125,9 @@ local f = Def.ActorFrame {
 			self:queuecommand("On")
 			active = true
 		else
+			ActiveSS = 0
 			MESSAGEMAN:Broadcast("NumericInputEnded")
+			SCREENMAN:set_input_redirected(PLAYER_1, false)
 			self:queuecommand("Off")
 			active = false
 		end

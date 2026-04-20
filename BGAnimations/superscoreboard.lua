@@ -34,6 +34,7 @@ local tzoom = 0.6 -- increased for larger score cards
 local moving
 local cheese
 local collapsed = false
+local activeNestedTab = 2
 
 -- Layout constants for various sub-elements
 local adjx = 14
@@ -51,6 +52,9 @@ local isGlobalRanking = true
 -- will eat any mousewheel inputs to scroll pages while mouse is over the background frame
 local function input(event)
 	if isOver(cheese:GetChild("FrameDisplay")) then -- visibility checks are built into isover now -mina
+		if activeNestedTab ~= 2 then
+			return false
+		end
 		if event.DeviceInput.button == "DeviceButton_mousewheel up" and event.type == "InputEventType_FirstPress" then
 			moving = true
 			cheese:queuecommand("PrevPage")
@@ -89,6 +93,128 @@ local translated_info = {
 }
 
 local scoretable = {}
+
+local function getPrimaryButtonText()
+	if activeNestedTab == 3 then
+		return "Skillsets"
+	end
+	return "Leaderboard"
+end
+
+local function averageValues(values)
+	if not values or #values == 0 then return nil end
+	local sum = 0
+	local count = 0
+	for _, value in ipairs(values) do
+		if value ~= nil and value == value and value ~= math.huge and value ~= -math.huge then
+			sum = sum + value
+			count = count + 1
+		end
+	end
+	if count == 0 then return nil end
+	return sum / count
+end
+
+local function getAverageNps(steps, rate)
+	if not steps then return nil end
+	local radar = steps:GetRadarValues(PLAYER_1)
+	if not radar then return nil end
+	local notes = radar:GetValue("RadarCategory_Notes")
+	local song = GAMESTATE:GetCurrentSong()
+	if not song then return nil end
+	local lastSecond = song:GetLastSecond()
+	if not lastSecond or lastSecond <= 0 then return nil end
+	return (notes * rate) / lastSecond
+end
+
+local function getSkillsetMsdAtRate(steps, rate, skillsetName)
+	if not steps then return nil end
+	local ok, value = pcall(function()
+		if skillsetName == "Overall" then
+			return steps:GetMSD(rate, 1)
+		elseif skillsetName == "Stream" then
+			return steps:GetMSD(rate, 2)
+		elseif skillsetName == "Jumpstream" then
+			return steps:GetMSD(rate, 3)
+		elseif skillsetName == "Handstream" then
+			return steps:GetMSD(rate, 4)
+		elseif skillsetName == "Stamina" then
+			return steps:GetMSD(rate, 5)
+		elseif skillsetName == "JackSpeed" then
+			return steps:GetMSD(rate, 6)
+		elseif skillsetName == "Chordjack" or skillsetName == "ChordJack" then
+			return steps:GetMSD(rate, 7)
+		elseif skillsetName == "Technical" then
+			return steps:GetMSD(rate, 8)
+		end
+		return nil
+	end)
+	if ok and value and value > 0 then return value end
+	return nil
+end
+
+local function getDebugSkillsetMsd(debugMsd, skillsetName)
+	if not debugMsd or not debugMsd["Left"] or not debugMsd["Right"] then return nil end
+	local debugIndex = nil
+	if skillsetName == "Stream" then
+		debugIndex = 1
+	elseif skillsetName == "Jumpstream" then
+		debugIndex = 2
+	elseif skillsetName == "Handstream" then
+		debugIndex = 3
+	elseif skillsetName == "Chordjack" or skillsetName == "ChordJack" then
+		debugIndex = 4
+	elseif skillsetName == "Technical" then
+		debugIndex = 5
+	end
+	if not debugIndex then return nil end
+	local left = averageValues(debugMsd["Left"][debugIndex])
+	local right = averageValues(debugMsd["Right"][debugIndex])
+	local count = 0
+	local total = 0
+	if left then
+		total = total + left
+		count = count + 1
+	end
+	if right then
+		total = total + right
+		count = count + 1
+	end
+	if count == 0 then return nil end
+	return total / count
+end
+
+local function getSkillsetBreakdownRows()
+	local rows = {}
+	local steps = GAMESTATE:GetCurrentSteps()
+	if not steps then return rows end
+	local rate = notShit.round(GAMESTATE:GetSongOptionsObject("ModsLevel_Current"):MusicRate(), 2)
+	local ok, calcExt = pcall(function()
+		return steps:GetCalcDebugExt()
+	end)
+	local debugMsd = ok and calcExt and calcExt["DebugMSD"] or nil
+	for i, skillsetName in ipairs(ms.SkillSets) do
+		if skillsetName ~= "Overall" then
+			local value = getSkillsetMsdAtRate(steps, rate, skillsetName)
+			if not value then
+				value = getDebugSkillsetMsd(debugMsd, skillsetName)
+			end
+			rows[#rows + 1] = {
+				label = ms.SkillSetsTranslated[i] or skillsetName,
+				text = value and string.format("%.2f", value) or "--",
+				color = value and byMSD(value) or color("#888888")
+			}
+		end
+	end
+	local averageNps = getAverageNps(steps, rate)
+	rows[#rows + 1] = {
+		label = "Average NPS",
+		text = averageNps and string.format("%.2f", averageNps) or "--",
+		color = color("#BBBBBB")
+	}
+	return rows
+end
+
 local o = Def.ActorFrame {
 	Name = "ScoreDisplay",
 	InitCommand = function(self)
@@ -96,6 +222,15 @@ local o = Def.ActorFrame {
 	end,
 	BeginCommand = function(self)
 		SCREENMAN:GetTopScreen():AddInputCallback(input)
+		self:playcommand("Update")
+	end,
+	CurrentSongChangedMessageCommand = function(self)
+		self:playcommand("Update")
+	end,
+	CurrentStepsChangedMessageCommand = function(self)
+		self:playcommand("Update")
+	end,
+	CurrentRateChangedMessageCommand = function(self)
 		self:playcommand("Update")
 	end,
 	GetFilteredLeaderboardCommand = function(self)
@@ -110,6 +245,12 @@ local o = Def.ActorFrame {
 		ind = 0
 		self:playcommand("GetFilteredLeaderboard") -- we can move all the filter stuff to lua so we're not being dumb hurr hur -mina
 		self:playcommand("Update")
+	end,
+	NestedTabChangedMessageCommand = function(self, params)
+		if params and params.tab then
+			activeNestedTab = params.tab
+			self:playcommand("Update")
+		end
 	end,
 	SetDynamicAccentColorMessageCommand = function(self, params)
 		-- Store and apply accent color
@@ -136,10 +277,12 @@ local o = Def.ActorFrame {
 		end
 	end,
 	NextPageCommand = function(self)
+		if activeNestedTab ~= 2 then return end
 		ind = ind + numscores
 		self:queuecommand("Update")
 	end,
 	PrevPageCommand = function(self)
+		if activeNestedTab ~= 2 then return end
 		ind = ind - numscores
 		self:queuecommand("Update")
 	end,
@@ -301,6 +444,11 @@ local o = Def.ActorFrame {
 			end
 		end,
 		UpdateCommand = function(self)
+			self:visible(activeNestedTab == 2)
+			if activeNestedTab ~= 2 then
+				self:settext("")
+				return
+			end
 			local numberofscores = scoretable ~= nil and #scoretable or 0
 			local online = DLMAN:IsLoggedIn()
 			if not GAMESTATE:GetCurrentSong() then
@@ -319,6 +467,10 @@ local o = Def.ActorFrame {
 		end,
 		CurrentSongChangedMessageCommand = function(self)
 			local online = DLMAN:IsLoggedIn()
+			if activeNestedTab ~= 2 then
+				self:settext("")
+				return
+			end
 			if not GAMESTATE:GetCurrentSong() then
 				self:settext("")
 			elseif not online and scoretable ~= nil and #scoretable == 0 then
@@ -349,6 +501,12 @@ local o = Def.ActorFrame {
 				ind = 0
 				self:GetParent():queuecommand("GetFilteredLeaderboard")
 			end
+		end,
+		UpdateCommand = function(self)
+			self:visible(activeNestedTab == 2)
+		end,
+		NestedTabChangedMessageCommand = function(self)
+			self:playcommand("Update")
 		end
 	},
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
@@ -368,6 +526,12 @@ local o = Def.ActorFrame {
 			if params.event == "DeviceButton_left mouse button" then
 				-- Sort logic
 			end
+		end,
+		UpdateCommand = function(self)
+			self:visible(activeNestedTab == 2)
+		end,
+		NestedTabChangedMessageCommand = function(self)
+			self:playcommand("Update")
 		end
 	},
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
@@ -375,7 +539,7 @@ local o = Def.ActorFrame {
 		InitCommand = function(self)
 			self:xy(width * 0.2, 15):zoom(0.4):halign(0.5):valign(0.5)
 			self:diffuse(getMainColor("highlight"))
-			self:settext("Leaderboard")
+			self:settext(getPrimaryButtonText())
 		end,
 		MouseOverCommand = function(self)
 			self:diffusealpha(hoverAlpha)
@@ -385,8 +549,14 @@ local o = Def.ActorFrame {
 		end,
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" then
-				MESSAGEMAN:Broadcast("SwitchToLocalScores")
+				MESSAGEMAN:Broadcast("CycleNestedScoreView")
 			end
+		end,
+		UpdateCommand = function(self)
+			self:settext(getPrimaryButtonText())
+		end,
+		NestedTabChangedMessageCommand = function(self)
+			self:playcommand("Update")
 		end
 	}
 }
@@ -400,6 +570,10 @@ local function makeScoreDisplay(i)
 			self:y(45 + packspaceY * (i - 1))
 		end,
 		UpdateCommand = function(self)
+			if activeNestedTab ~= 2 then
+				self:visible(false)
+				return
+			end
 			if scoretable ~= nil then
 				hs = scoretable[(i + ind)]
 			else
@@ -485,8 +659,60 @@ local function makeScoreDisplay(i)
 	return o
 end
 
+local function makeSkillsetDisplay(i)
+	local rowData
+	return Def.ActorFrame {
+		Name = "SkillsetDisplay_" .. i,
+		InitCommand = function(self)
+			self:y(42 + ((i - 1) * 18))
+		end,
+		UpdateCommand = function(self)
+			if activeNestedTab ~= 3 then
+				self:visible(false)
+				return
+			end
+			local rows = getSkillsetBreakdownRows()
+			rowData = rows[i]
+			if rowData then
+				self:visible(true)
+				self:playcommand("Display")
+			else
+				self:visible(false)
+			end
+		end,
+		UIElements.QuadButton(1, 1) .. {
+			InitCommand = function(self)
+				self:x(0):zoomto(width, 18):halign(0)
+				self:diffuse(color("#111111")):diffusealpha(0.28)
+			end,
+		},
+		LoadFont("Common normal") .. {
+			InitCommand = function(self)
+				self:x(10):zoom(0.45):halign(0):valign(0.5)
+			end,
+			DisplayCommand = function(self)
+				self:settext(rowData and rowData.label or "")
+				self:diffuse(color("#DDDDDD"))
+			end
+		},
+		LoadFont("Common normal") .. {
+			InitCommand = function(self)
+				self:x(width - 10):zoom(0.45):halign(1):valign(0.5)
+			end,
+			DisplayCommand = function(self)
+				self:settext(rowData and rowData.text or "")
+				self:diffuse(rowData and rowData.color or color("#888888"))
+			end
+		}
+	}
+end
+
 for i = 1, numscores do
 	o[#o + 1] = makeScoreDisplay(i)
+end
+
+for i = 1, 8 do
+	o[#o + 1] = makeSkillsetDisplay(i)
 end
 
 --[[

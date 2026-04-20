@@ -98,6 +98,201 @@ local function getScoreDateRelative(score)
 	return getRelativeTime(score:GetDate())
 end
 
+local function getJudgeLabel(score)
+	if not score then return "J4" end
+	local j = table.find(ms.JudgeScalers, notShit.round(score:GetJudgeScale(), 2))
+	if not j then j = 4 end
+	if j < 4 then j = 4 end
+	return "J" .. j
+end
+
+local function getAverageOfNumberList(values)
+	if not values or #values == 0 then return nil end
+	local sum = 0
+	local count = 0
+	for _, value in ipairs(values) do
+		if value ~= nil and value == value and value ~= math.huge and value ~= -math.huge then
+			sum = sum + value
+			count = count + 1
+		end
+	end
+	if count == 0 then return nil end
+	return sum / count
+end
+
+local skillsetPatternModIndexByName = {
+	Stream = 1,
+	Jumpstream = 2,
+	Handstream = 3,
+	Chordjack = 4,
+	ChordJack = 4,
+	Technical = 5,
+}
+
+local skillsetBaseKeyByName = {
+	Stream = "NPSBase",
+	Jumpstream = "NPSBase",
+	Handstream = "NPSBase",
+	Chordjack = "CJBase",
+	ChordJack = "CJBase",
+	Technical = "TechBase",
+}
+
+local skillsetBpmScaleByName = {
+	Stream = 15,
+	Jumpstream = 15,
+	Handstream = 15,
+	Chordjack = 15,
+	ChordJack = 15,
+	Technical = 15,
+}
+
+local function getSkillsetValueAtRate(steps, rate, skillsetName)
+	local ok, value = pcall(function()
+		if skillsetName == "Overall" then
+			return steps:GetMSD(rate, 1)
+		elseif skillsetName == "Stream" then
+			return steps:GetMSD(rate, 2)
+		elseif skillsetName == "Jumpstream" then
+			return steps:GetMSD(rate, 3)
+		elseif skillsetName == "Handstream" then
+			return steps:GetMSD(rate, 4)
+		elseif skillsetName == "Stamina" then
+			return steps:GetMSD(rate, 5)
+		elseif skillsetName == "JackSpeed" then
+			return steps:GetMSD(rate, 6)
+		elseif skillsetName == "Chordjack" or skillsetName == "ChordJack" then
+			return steps:GetMSD(rate, 7)
+		elseif skillsetName == "Technical" then
+			return steps:GetMSD(rate, 8)
+		end
+		return nil
+	end)
+	if ok and value and value > 0 then return value end
+	return nil
+end
+
+local function getOrderedRelevantSkillsets(steps, rate)
+	if not steps then return {} end
+	local scored = {}
+	for _, skillsetName in ipairs(ms.SkillSets) do
+		if skillsetName ~= "Overall" then
+			local value = getSkillsetValueAtRate(steps, rate, skillsetName)
+			if value then
+				scored[#scored + 1] = {name = skillsetName, value = value}
+			end
+		end
+	end
+	table.sort(scored, function(a, b) return a.value > b.value end)
+	local ordered = {}
+	for _, entry in ipairs(scored) do
+		ordered[#ordered + 1] = entry.name
+	end
+	return ordered
+end
+
+local function getDominantSkillsets(steps, rate, maxCount)
+	if not steps then return {} end
+	local ordered = getOrderedRelevantSkillsets(steps, rate)
+	if #ordered == 0 then return {} end
+	local results = {}
+	local topSkillset = ordered[1]
+	local suppressSecondary = {
+		Technical = true,
+		Stamina = true,
+	}
+	for _, skillsetName in ipairs(ordered) do
+		if skillsetName ~= "Overall" then
+			local allow = true
+			if suppressSecondary[skillsetName] and skillsetName ~= topSkillset then
+				allow = false
+			end
+			if allow then
+				results[#results + 1] = skillsetName
+				if #results >= maxCount then break end
+			end
+		end
+	end
+	return results
+end
+
+local function getPrimarySkillsetLabel(steps)
+	if not steps then return "Uncategorised" end
+	local rate = getCurRateValue()
+	local dominant = getDominantSkillsets(steps, rate, 1)
+	if #dominant == 0 then return "Uncategorised" end
+	return ms.SkillSetsTranslatedByName[dominant[1]] or dominant[1]
+end
+
+local function getPatternBpmForSkillset(steps, rate, skillsetName)
+	if not steps then return nil end
+	local patternIndex = skillsetPatternModIndexByName[skillsetName]
+	local baseKey = skillsetBaseKeyByName[skillsetName] or "NPSBase"
+	local bpmScale = skillsetBpmScaleByName[skillsetName] or 15
+	if not patternIndex then return nil end
+	local okOut, calcOut = pcall(function()
+		return steps:GetCalcDebugOutput()
+	end)
+	local okExt, calcExt = pcall(function()
+		return steps:GetCalcDebugExt()
+	end)
+	if not okOut or not okExt or calcOut == nil or calcExt == nil then return nil end
+	local diffValues = calcOut["CalcDiffValue"]
+	local patternMods = calcExt["DebugTotalPatternMod"]
+	local baseValues = diffValues and diffValues[baseKey]
+	if baseValues == nil and baseKey ~= "NPSBase" then
+		baseValues = diffValues and diffValues["NPSBase"]
+	end
+	if diffValues == nil or patternMods == nil or baseValues == nil then return nil end
+	local baseLeft = getAverageOfNumberList(baseValues[1])
+	local baseRight = getAverageOfNumberList(baseValues[2])
+	local baseNps = 0
+	local baseCount = 0
+	if baseLeft then
+		baseNps = baseNps + baseLeft
+		baseCount = baseCount + 1
+	end
+	if baseRight then
+		baseNps = baseNps + baseRight
+		baseCount = baseCount + 1
+	end
+	if baseCount == 0 then return nil end
+	baseNps = (baseNps / baseCount) * rate
+	local patternLeft = patternMods["Left"] and patternMods["Left"][patternIndex]
+	local patternRight = patternMods["Right"] and patternMods["Right"][patternIndex]
+	local modLeft = getAverageOfNumberList(patternLeft)
+	local modRight = getAverageOfNumberList(patternRight)
+	local patternMod = 0
+	local modCount = 0
+	if modLeft then
+		patternMod = patternMod + modLeft
+		modCount = modCount + 1
+	end
+	if modRight then
+		patternMod = patternMod + modRight
+		modCount = modCount + 1
+	end
+	if modCount == 0 then return nil end
+	patternMod = patternMod / modCount
+	return math.floor((baseNps * patternMod * bpmScale) + 0.5)
+end
+
+local function getMinaPatternBpmBreakdown(steps)
+	if not steps then return "" end
+	local rate = getCurRateValue()
+	local dominant = getDominantSkillsets(steps, rate, 2)
+	if #dominant == 0 then return "" end
+	local parts = {}
+	for _, skillsetName in ipairs(dominant) do
+		local bpm = getPatternBpmForSkillset(steps, rate, skillsetName)
+		if bpm then
+			local translated = ms.SkillSetsTranslatedByName[skillsetName] or skillsetName
+			parts[#parts + 1] = string.format("%d BPM %s", bpm, translated)
+		end
+	end
+	return table.concat(parts, ", ")
+end
+
 local function toggleNoteField()
 	local nf = mcbootlarder:GetChild("NoteField")
 	if song and not noteField then -- first time setup
@@ -410,11 +605,22 @@ t[#t + 1] = Def.ActorFrame {
 			end,
 			MintyFreshCommand = function(self)
 				if song and GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() == 4 then
-					local ss = steps:GetRelevantSkillsetsByMSDRank(getCurRateValue(), 1)
-					local out = ss == "" and "Uncategorised" or ms.SkillSetsTranslatedByName[ss]
-					self:settext(out)
+					self:settext(getPrimarySkillsetLabel(steps))
 				else
 					self:settext("Uncategorised")
+				end
+			end
+		}
+		f[#f+1] = LoadFont("Common Normal") .. {
+			InitCommand = function(self)
+				self:xy(boxW/2, boxH - 5):zoom(0.20):halign(0.5):valign(0.5):diffuse(color("#BBBBBB"))
+				self:maxwidth((boxW - 8) / 0.20)
+			end,
+			MintyFreshCommand = function(self)
+				if steps and GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() == 4 then
+					self:settext(getMinaPatternBpmBreakdown(steps))
+				else
+					self:settext("")
 				end
 			end
 		}
@@ -454,7 +660,7 @@ t[#t + 1] = Def.ActorFrame {
 			MintyFreshCommand = function(self)
 				if score then
 					local perc = score:GetWifeScore() * 100
-					self:settextf("%.2f%%", perc)
+					self:settextf("%.2f%% [%s]", perc, getJudgeLabel(score))
 					self:diffuse(byGrade(score:GetWifeGrade()))
 				else
 					self:settext("--"):diffuse(color("#666666"))
@@ -792,6 +998,24 @@ t[#t + 1] = LoadFont("Common Normal") .. {
 --Chart Preview Button
 local yesiwantnotefield = false
 local lastratepresses = {0,0}
+
+local function adjustMusicRate(delta)
+	local rate = GAMESTATE:GetSongOptionsObject("ModsLevel_Preferred"):MusicRate()
+	local nextRate = clamp(rate + delta, MIN_MUSIC_RATE, MAX_MUSIC_RATE)
+	if math.abs(nextRate - rate) < 0.001 then return end
+	GAMESTATE:GetSongOptionsObject("ModsLevel_Preferred"):MusicRate(nextRate)
+	GAMESTATE:GetSongOptionsObject("ModsLevel_Song"):MusicRate(nextRate)
+	GAMESTATE:GetSongOptionsObject("ModsLevel_Current"):MusicRate(nextRate)
+	MESSAGEMAN:Broadcast("CurrentRateChanged")
+	local top = SCREENMAN:GetTopScreen()
+	if top and top.GetChild then
+		local twirler = top:GetChild("wifetwirler")
+		if twirler then
+			twirler:queuecommand("MintyFresh")
+		end
+	end
+end
+
 local function ihatestickinginputcallbackseverywhere(event)
 	if event.type ~= "InputEventType_Release" and getTabIndex() == 0 then
 		if event.DeviceInput.button == "DeviceButton_space" then
@@ -819,6 +1043,10 @@ local function ihatestickinginputcallbackseverywhere(event)
 		if math.abs(lastratepresses[1] - lastratepresses[2]) < 0.05 and lastratepresses[1] ~= 0 and lastratepresses[2] ~= 0 then
 			MESSAGEMAN:Broadcast("Code", {Name="ResetRate"})
 			ChangeMusicRate(nil, {Name="ResetRate"})
+		elseif getTabIndex() == 0 and event.GameButton == "EffectUp" and not INPUTFILTER:IsControlPressed() then
+			adjustMusicRate(0.05)
+		elseif getTabIndex() == 0 and event.GameButton == "EffectDown" and not INPUTFILTER:IsControlPressed() then
+			adjustMusicRate(-0.05)
 		end
 	end
 	return false
@@ -826,24 +1054,59 @@ end
 
 local prevplayerops = "Main"
 
+local function openCollectionTab()
+	local tind = getTabIndex()
+	setTabIndex(7)
+	MESSAGEMAN:Broadcast("TabChanged", {from = tind, to = 7})
+end
+
+local function startSongWithPracticeMode(enabled)
+	local slot = pn_to_profile_slot(PLAYER_1)
+	local data = playerConfig:get_data(slot)
+	data.PracticeMode = enabled
+	playerConfig:set_dirty(slot)
+	playerConfig:save(slot)
+
+	if GAMESTATE then
+		if GAMESTATE.SetPracticeMode then
+			pcall(function()
+				GAMESTATE:SetPracticeMode(enabled)
+			end)
+		elseif GAMESTATE.ApplyGameCommand then
+			pcall(function()
+				GAMESTATE:ApplyGameCommand(enabled and "mod,practice" or "mod,no practice")
+			end)
+		end
+	end
+
+	local pstate = GAMESTATE and GAMESTATE.GetPlayerState and GAMESTATE:GetPlayerState(PLAYER_1) or nil
+	if pstate and pstate.GetPlayerOptions then
+		local okPreferred, preferred = pcall(function()
+			return pstate:GetPlayerOptions("ModsLevel_Preferred")
+		end)
+		if okPreferred and preferred and preferred.Practice then
+			pcall(function()
+				preferred:Practice(enabled)
+			end)
+		end
+		local okCurrent, current = pcall(function()
+			return pstate:GetPlayerOptions("ModsLevel_Current")
+		end)
+		if okCurrent and current and current.Practice then
+			pcall(function()
+				current:Practice(enabled)
+			end)
+		end
+	end
+
+	local top = SCREENMAN:GetTopScreen()
+	if top and top.SelectCurrent then
+		top:SelectCurrent()
+	end
+end
+
 t[#t + 1] = Def.ActorFrame {
 	Name = "LittleButtonsOnTheLeft",
-
-	UIElements.TextToolTip(1, 1, "Common Normal") .. {
-		Name = "BackButton",
-		BeginCommand = function(self)
-			self:xy(25, SCREEN_BOTTOM - 28):zoom(0.5):halign(0)
-			self:settext("⮪ Back")
-			self:diffuse(getMainColor("positive"))
-		end,
-		MouseDownCommand = function(self, params)
-			if params.event == "DeviceButton_left mouse button" then
-				SCREENMAN:GetTopScreen():Cancel()
-			end
-		end,
-		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha2) end,
-		MouseOutCommand = function(self) self:diffusealpha(1) end,
-	},
 
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		Name = "PreviewViewer",
@@ -851,7 +1114,7 @@ t[#t + 1] = Def.ActorFrame {
 			mcbootlarder = self:GetParent():GetParent():GetChild("ChartPreview")
 			SCREENMAN:GetTopScreen():AddInputCallback(MPinput)
 			SCREENMAN:GetTopScreen():AddInputCallback(ihatestickinginputcallbackseverywhere)
-			self:xy(60, SCREEN_BOTTOM - 68):zoom(0.5):halign(0.5)
+			self:xy(60, SCREEN_BOTTOM - 58):zoom(0.5):halign(0.5)
 			self:settext("👁 Preview")
 			self:diffuse(getMainColor("positive"))
 		end,
@@ -908,7 +1171,7 @@ t[#t + 1] = Def.ActorFrame {
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		Name = "PlayerOptionsButton",
 		BeginCommand = function(self)
-			self:xy(220, SCREEN_BOTTOM - 68):halign(0.5):zoom(0.5)
+			self:xy(220, SCREEN_BOTTOM - 58):halign(0.5):zoom(0.5)
 			self:settext("⚡ Mods")
 			self:diffuse(getMainColor("positive"))
 		end,
@@ -936,42 +1199,167 @@ t[#t + 1] = Def.ActorFrame {
 		end,
 	},
 
+	-- Judge Dropdown Menu
+	Def.ActorFrame {
+		Name = "JudgeDropdown",
+		InitCommand = function(self)
+			self:xy(390, SCREEN_BOTTOM - 75):visible(false)
+		end,
+		JudgeChangedMessageCommand = function(self)
+			self:visible(false)
+		end,
+		-- Menu Background
+		Def.Quad {
+			InitCommand = function(self)
+				self:zoomto(80, 140):valign(1):diffuse(color("#111111")):diffusealpha(0.95)
+			end
+		},
+		-- Menu Items (J4 to J9)
+		(function()
+			local items = Def.ActorFrame{}
+			local function makeJudgeItem(i)
+				return UIElements.TextToolTip(1, 1, "Common Normal") .. {
+					InitCommand = function(self)
+						self:y(-22 * (i - 3.5)):zoom(0.5):settext("Judge " .. i)
+						if GetTimingDifficulty() == i then
+							self:diffuse(getMainColor("highlight"))
+						else
+							self:diffuse(color("#FFFFFF"))
+						end
+					end,
+					MouseDownCommand = function(self, params)
+						if params.event == "DeviceButton_left mouse button" then
+							local scale = ms.JudgeScalers[i]
+							SetTimingDifficulty(scale)
+							PREFSMAN:SavePreferences()
+							MESSAGEMAN:Broadcast("JudgeChanged")
+							MESSAGEMAN:Broadcast("JudgeDisplayChanged")
+						end
+					end,
+					MouseOverCommand = function(self) self:diffusealpha(0.6) end,
+					MouseOutCommand = function(self) self:diffusealpha(1) end,
+					JudgeChangedMessageCommand = function(self)
+						if GetTimingDifficulty() == i then
+							self:diffuse(getMainColor("highlight"))
+						else
+							self:diffuse(color("#FFFFFF"))
+						end
+					end
+				}
+			end
+			for i = 4, 9 do
+				items[#items+1] = makeJudgeItem(i)
+			end
+			return items
+		end)()
+	},
+
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		Name = "Wife3J4Button",
 		BeginCommand = function(self)
-			self:xy(390, SCREEN_BOTTOM - 68):halign(0.5):zoom(0.5)
-			self:settext("⚖ Wife3 J4")
+			self:xy(390, SCREEN_BOTTOM - 58):halign(0.5):zoom(0.5)
+			self:settext("Judge " .. GetTimingDifficulty())
 			self:diffuse(getMainColor("positive"))
 		end,
 		MouseDownCommand = function(self, params)
-			-- Toggle judge logic (copy from _PlayerInfo.lua if needed)
-			local cur_judge = GetTimingDifficulty()
 			if params.event == "DeviceButton_left mouse button" then
-				if cur_judge < 9 then SetTimingDifficulty(cur_judge + 1) end
-			else
-				if cur_judge > 4 then SetTimingDifficulty(cur_judge - 1) end
+				local dd = self:GetParent():GetChild("JudgeDropdown")
+				dd:visible(not dd:IsVisible())
+			elseif params.event == "DeviceButton_right mouse button" then
+				-- Cycle backwards as a shortcut
+				local cur = GetTimingDifficulty()
+				local nextJ = (cur > 4) and (cur - 1) or 9
+				local scale = ms.JudgeScalers[nextJ]
+				SetTimingDifficulty(scale)
+				PREFSMAN:SavePreferences()
+				MESSAGEMAN:Broadcast("JudgeChanged")
+				MESSAGEMAN:Broadcast("JudgeDisplayChanged")
 			end
-			MESSAGEMAN:Broadcast("JudgeChanged")
+		end,
+		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha2) end,
+		MouseOutCommand = function(self) self:diffusealpha(0.9) end,
+		JudgeChangedMessageCommand = function(self)
+			self:settext("Judge " .. GetTimingDifficulty())
+		end
+	},
+
+	UIElements.QuadButton(1, 1) .. {
+		Name = "RightButtonsBackdrop",
+		InitCommand = function(self)
+			self:xy(SCREEN_WIDTH - 400, SCREEN_BOTTOM - 78):halign(0):valign(0)
+			self:zoomto(400, 44):diffuse(getMainColor("frames")):diffusealpha(0.9)
+		end,
+		SetDynamicAccentColorMessageCommand = function(self, params)
+			self:diffuse(params.color):diffusealpha(0.9)
+		end,
+		MouseDownCommand = function(self, params)
+			if params.event == "DeviceButton_left mouse button" or params.event == "DeviceButton_right mouse button" then
+				return
+			end
+		end
+	},
+
+	UIElements.TextToolTip(1, 1, "Common Normal") .. {
+		Name = "CollectionButton",
+		BeginCommand = function(self)
+			self:xy(SCREEN_WIDTH - 280, SCREEN_BOTTOM - 58):halign(1):zoom(0.5)
+			self:settext("☰ Collection")
+			self:diffuse(getMainColor("positive"))
+		end,
+		MouseDownCommand = function(self, params)
+			if params.event == "DeviceButton_left mouse button" then
+				openCollectionTab()
+			end
 		end,
 		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha2) end,
 		MouseOutCommand = function(self) self:diffusealpha(1) end,
-		JudgeChangedMessageCommand = function(self)
-			self:settext("⚖ Wife3 J" .. GetTimingDifficulty())
-		end
 	},
+
+	UIElements.TextToolTip(1, 1, "Common Normal") .. {
+		Name = "RandomButton",
+		BeginCommand = function(self)
+			self:xy(SCREEN_WIDTH - 180, SCREEN_BOTTOM - 58):halign(1):zoom(0.5)
+			self:settext("↻ Random")
+			self:diffuse(getMainColor("positive"))
+		end,
+		MouseDownCommand = function(self, params)
+			if params.event == "DeviceButton_left mouse button" and SelectRandomSong then
+				SelectRandomSong()
+			end
+		end,
+		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha2) end,
+		MouseOutCommand = function(self) self:diffusealpha(1) end,
+	},
+
+	UIElements.TextToolTip(1, 1, "Common Normal") .. {
+		Name = "PracticeButton",
+		BeginCommand = function(self)
+			self:xy(SCREEN_WIDTH - 90, SCREEN_BOTTOM - 58):halign(1):zoom(0.5)
+			self:settext("◎ Practice")
+			self:diffuse(getMainColor("positive"))
+		end,
+		MouseDownCommand = function(self, params)
+			if params.event == "DeviceButton_left mouse button" and song then
+				startSongWithPracticeMode(true)
+			end
+		end,
+		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha2) end,
+		MouseOutCommand = function(self) self:diffusealpha(1) end,
+	},
+
 
 
 
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		Name = "PlayButton",
 		BeginCommand = function(self)
-			self:xy(SCREEN_WIDTH - 20, SCREEN_BOTTOM - 68):halign(1):zoom(0.7)
+			self:xy(SCREEN_WIDTH - 20, SCREEN_BOTTOM - 58):halign(1):zoom(0.7)
 			self:settext("▶ Play")
 			self:diffuse(getMainColor("positive"))
 		end,
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" then
-				SCREENMAN:GetTopScreen():StartSelectedSong()
+				startSongWithPracticeMode(false)
 			end
 		end,
 		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha2) end,

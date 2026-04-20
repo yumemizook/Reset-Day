@@ -11,7 +11,8 @@ local pn = GAMESTATE:GetEnabledPlayers()[1]
 local nestedTab = 1
 local nestedTabs = {
 	THEME:GetString("TabScore", "NestedLocal"),
-	THEME:GetString("TabScore", "NestedOnline")
+	THEME:GetString("TabScore", "NestedOnline"),
+	"Skillsets"
 }
 local hasReplayData
 local currentAccentColor = nil
@@ -97,6 +98,24 @@ end
 
 local hoverAlpha = 0.6
 
+local function getNestedTabButtonText()
+	if nestedTab == 1 then
+		return "Your scores"
+	elseif nestedTab == 2 then
+		return "Leaderboard"
+	end
+	return "Skillsets"
+end
+
+local function broadcastNestedTabChanged()
+	MESSAGEMAN:Broadcast("NestedTabChanged", {tab = nestedTab})
+end
+
+local function cycleNestedTab()
+	nestedTab = (nestedTab % 3) + 1
+	broadcastNestedTabChanged()
+end
+
 local moped
 -- Only works if ... it should work
 -- You know, if we can see the place where the scores should be.
@@ -169,21 +188,28 @@ local ret = Def.ActorFrame {
 	end,
 	NestedTabChangedMessageCommand = function(self)
 		self:queuecommand("Set")
-		-- Toggle visibility between local and online leaderboards
+		-- Toggle visibility between local scores and shared leaderboard/skillset container
 		if nestedTab == 1 then
 			self:GetChild("LocalScores"):visible(true)
 			if moped then moped:visible(false) end
 		else
 			self:GetChild("LocalScores"):visible(false)
-			if moped then 
+			if moped then
 				moped:visible(true)
-				moped:playcommand("GetFilteredLeaderboard")
+				if nestedTab == 2 then
+					moped:playcommand("GetFilteredLeaderboard")
+				else
+					moped:playcommand("Update")
+				end
 			end
 		end
 		-- Broadcast accent color to ensure both leaderboards have it
 		if currentAccentColor then
 			MESSAGEMAN:Broadcast("SetDynamicAccentColor", {color = currentAccentColor})
 		end
+	end,
+	CycleNestedScoreViewMessageCommand = function(self)
+		cycleNestedTab()
 	end,
 	SwitchToLocalScoresMessageCommand = function(self)
 		-- Handle request from online leaderboard to switch back to local
@@ -193,14 +219,14 @@ local ret = Def.ActorFrame {
 		-- Update button text in LocalScores
 		local btn = self:GetChild("LocalScores"):GetChild("YourScoresBtn")
 		if btn then
-			btn:settext("Your scores")
+			btn:settext(getNestedTabButtonText())
 			btn:playcommand("Update")
 		end
 		-- Broadcast accent color to ensure visibility
 		if currentAccentColor then
 			MESSAGEMAN:Broadcast("SetDynamicAccentColor", {color = currentAccentColor})
 		end
-		MESSAGEMAN:Broadcast("NestedTabChanged")
+		broadcastNestedTabChanged()
 	end,
 	SetDynamicAccentColorMessageCommand = function(self, params)
 		-- Store the current accent color for later use
@@ -305,6 +331,10 @@ local t = Def.ActorFrame {
 				self:queuecommand("NextRate")
 			elseif params.Name == "PrevRate" then
 				self:queuecommand("PrevRate")
+			elseif params.Name == "NextScore" then
+				self:queuecommand("NextScore")
+			elseif params.Name == "PrevScore" then
+				self:queuecommand("PrevScore")
 			end
 		end
 	end,
@@ -396,11 +426,7 @@ local function topBarButton(name, x, width, text, cmd, activeFunc)
 		TopBarUpdateMessageCommand = function(self) self:playcommand("Update") end,
 		NestedTabChangedMessageCommand = function(self)
 			if name == "YourScoresBtn" then
-				if nestedTab == 1 then
-					self:settext("Your scores")
-				else
-					self:settext("Online Scores")
-				end
+				self:settext(getNestedTabButtonText())
 			end
 			self:playcommand("Update")
 		end,
@@ -410,8 +436,7 @@ local function topBarButton(name, x, width, text, cmd, activeFunc)
 end
 
 t[#t + 1] = topBarButton("YourScoresBtn", frameWidth * 0.2, 100, "Your scores", function() 
-	nestedTab = (nestedTab == 1) and 2 or 1 
-	MESSAGEMAN:Broadcast("NestedTabChanged")
+	cycleNestedTab()
 end, function() return nestedTab == 1 end)
 
 t[#t + 1] = topBarButton("PerformanceBtn", frameWidth * 0.5, 100, "Performance", function()

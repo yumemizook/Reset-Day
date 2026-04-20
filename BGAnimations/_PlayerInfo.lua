@@ -66,20 +66,8 @@ local translated_info = {
 }
 
 local function UpdateTime(self)
-	-- Function disabled as time display is commented out
-	--[[
-	local year = Year()
-	local month = MonthOfYear() + 1
-	local day = DayOfMonth()
-	local hour = Hour()
-	local minute = Minute()
-	local second = Second()
-	self:GetChild("CurrentTime"):settextf("%04d-%02d-%02d %02d:%02d:%02d", year, month, day, hour, minute, second)
+	-- Function disabled, the time is rendered elsewhere
 
-	local sessiontime = GAMESTATE:GetSessionTime()
-	self:GetChild("SessionTime"):settextf("%s: %s", translated_info["SessionTime"], SecondsToHHMMSS(sessiontime))
-	self:diffuse(nonButtonColor)
-	]]
 end
 
 -- handle logging in exactly like Til Death
