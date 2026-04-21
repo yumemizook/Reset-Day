@@ -910,10 +910,12 @@ local p =
  		Name = "Pie",
  		InitCommand = function(self)
 			self:queuecommand("Set")
- 			self:SetUpdateFunction(function(actor)
- 				actor:queuecommand("Set")
- 			end)
  		end,
+		BeginCommand = function(self)
+			self:SetUpdateFunction(function(actor)
+				actor:queuecommand("Set")
+			end)
+		end,
 		SetCommand = function(self)
 			local verts = buildRingVerts(getSongProgress(), pieInnerRadius, pieOuterRadius, highlight, pieSegments)
 			self:SetVertices(verts)

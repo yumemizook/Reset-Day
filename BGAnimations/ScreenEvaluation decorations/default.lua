@@ -673,7 +673,7 @@ local function scoreBoard(pn, position)
 		LoadFont("Common Large") .. {
 			Name = "MSDDisplay",
 			InitCommand = function(self)
-				self:xy(frameX + 30, frameY + 230)
+				self:xy(frameX + 15, frameY + 230)
 				self:zoom(0.6)
 				self:halign(0):valign(0)
 				self:maxwidth(90 / 0.6)
@@ -987,7 +987,8 @@ local function scoreBoard(pn, position)
 				end,
 				SetCommand = function(self)
 					self:finishtweening()
-					self:zoomx(frameWidth)
+					local percent = self:GetParent().jcount / totalTaps
+					self:zoomx(frameWidth * percent)
 				end,
 			},
 			LoadFont("Common Large") .. {
@@ -1615,12 +1616,12 @@ local function scoreBoard(pn, position)
 				local perf = usingCustomWindows and lastSnapshot and lastSnapshot:GetJudgments()["W2"] or getRescoredJudge(dvt, judge, 2)
 				local great = usingCustomWindows and lastSnapshot and lastSnapshot:GetJudgments()["W3"] or getRescoredJudge(dvt, judge, 3)
 				local statValues = scoreStatistics(score)
+				local maRatio = (perf and perf > 0) and (marv / perf) or 0
+				local paRatio = (great and great > 0) and (perf / great) or 0
 				self:settextf(
-					"MA: %.1f:%.1f • PA: %.1f:%.1f • M: %.2fms • SD: %.2fms",
-					marv or 0,
-					perf or 0,
-					perf or 0,
-					great or 0,
+					"MA: %.2f:1 • PA: %.2f:1 • M: %.2fms • SD: %.2fms",
+					maRatio,
+					paRatio,
 					statValues[1] or 0,
 					statValues[2] or 0
 				)
