@@ -45,9 +45,9 @@ local dvt = {}
 local totalTaps = 0
 local pss = STATSMAN:GetCurStageStats():GetPlayerStageStats()
 
-local frameX = 20
-local frameY = 140
-local frameWidth = SCREEN_CENTER_X - 120
+local frameX = 12
+local frameY = 90
+local frameWidth = 340
 
 -- dont default to using custom windows and dont persist that state
 -- custom windows are meant to be used as a thing you occasionally check, not the primary way to play the game
@@ -65,6 +65,9 @@ local judges = {
 
 t[#t+1] = Def.ActorFrame {
 	Name = "SongInfo",
+	InitCommand = function(self)
+		self:visible(false)
+	end,
 
 	LoadFont("Common Large") .. {
 		Name = "SongTitle",
@@ -145,6 +148,274 @@ local function getRescoreElements(score)
 	return o
 end
 local lastSnapshot = nil
+
+local function isLivePlay()
+	local top = SCREENMAN:GetTopScreen()
+	if not top or not top.GetStageStats then return false end
+	local ss = top:GetStageStats()
+	return ss and ss:GetLivePlay()
+end
+
+local function continueToSongSelect()
+	local top = SCREENMAN:GetTopScreen()
+	if top then
+		top:Cancel()
+	end
+end
+
+local function retryCurrentChart()
+	if not isLivePlay() then return end
+	SCREENMAN:SetNewScreen("ScreenGameplay")
+end
+
+local function getCurrentRateRecordScore()
+	if not score then return nil end
+	local scoreTable = getScoresByKey(PLAYER_1)
+	if not scoreTable then return nil end
+	local rateTable = getRateTable(scoreTable) or {}
+	local currentRateTable = rateTable[getRate(score)] or {}
+	return currentRateTable[1]
+end
+
+local function getDisplayedWifePercent()
+	local rescoretable = getRescoreElements(score)
+	return getRescoredWife3Judge(3, judge, rescoretable)
+end
+
+local function getDisplayedWifePercentText()
+	local percent = getDisplayedWifePercent()
+	if percent > 99 then
+		return string.format("%05.4f%%", notShit.floor(percent, 4))
+	end
+	return string.format("%05.2f%%", notShit.floor(percent, 2))
+end
+
+local function getDisplayedJudgeLabel()
+	local js = judge ~= 9 and judge or "ustice"
+	return "Wife3 J" .. js
+end
+
+local function getDisplayedRateValue()
+	local top = SCREENMAN:GetTopScreen()
+	local rate
+	if top:GetName() == "ScreenNetEvaluation" then
+		rate = score:GetMusicRate()
+	else
+		rate = top:GetReplayRate()
+		if not rate then rate = getCurRateValue() end
+	end
+	return notShit.round(rate, 3)
+end
+
+local function getDisplayedRateText()
+	return string.format("%.2fx", getDisplayedRateValue())
+end
+
+local function getDisplayedColumnsJudgeText()
+	local steps = GAMESTATE:GetCurrentSteps()
+	local style = GAMESTATE:GetCurrentStyle()
+	local columns = steps and steps:GetNumColumns() or (style and style:ColumnsPerPlayer()) or 4
+	return string.format("%dK • %s", columns, getDisplayedJudgeLabel())
+end
+
+local function getAverageOfNumberList(values)
+	if not values or #values == 0 then return nil end
+	local sum = 0
+	local count = 0
+	for _, value in ipairs(values) do
+		if type(value) == "number" then
+			sum = sum + value
+			count = count + 1
+		end
+	end
+	if count == 0 then return nil end
+	return sum / count
+end
+
+local skillsetPatternModIndexByName = {
+	Stream = 1,
+	Jumpstream = 2,
+	Handstream = 3,
+	Stamina = 4,
+	JackSpeed = 6,
+	Chordjack = 7,
+	ChordJack = 7,
+	Technical = 5,
+}
+
+local skillsetBaseKeyByName = {
+	Stream = "NPSBase",
+	Jumpstream = "NPSBase",
+	Handstream = "NPSBase",
+	Stamina = "MSDStream",
+	JackSpeed = "CJBase",
+	Chordjack = "CJBase",
+	ChordJack = "CJBase",
+	Technical = "TechBase",
+}
+
+local skillsetBpmScaleByName = {
+	Stream = 15,
+	Jumpstream = 15,
+	Handstream = 15,
+	Stamina = 12,
+	JackSpeed = 6,
+	Chordjack = 6,
+	ChordJack = 6,
+	Technical = 5,
+}
+
+local function getSkillsetValueAtRate(steps, rate, skillsetName)
+	local ok, value = pcall(function()
+		if skillsetName == "Stream" then
+			return steps:GetMSD(rate, 1)
+		elseif skillsetName == "Jumpstream" then
+			return steps:GetMSD(rate, 2)
+		elseif skillsetName == "Handstream" then
+			return steps:GetMSD(rate, 3)
+		elseif skillsetName == "Stamina" then
+			return steps:GetMSD(rate, 5)
+		elseif skillsetName == "JackSpeed" then
+			return steps:GetMSD(rate, 6)
+		elseif skillsetName == "Chordjack" or skillsetName == "ChordJack" then
+			return steps:GetMSD(rate, 7)
+		elseif skillsetName == "Technical" then
+			return steps:GetMSD(rate, 8)
+		end
+		return nil
+	end)
+	if ok and value and value > 0 then return value end
+	return nil
+end
+
+local function getDominantSkillsets(steps, rate, maxCount)
+	if not steps then return {} end
+	local scored = {}
+	for _, skillsetName in ipairs(ms.SkillSets) do
+		if skillsetName ~= "Overall" then
+			local value = getSkillsetValueAtRate(steps, rate, skillsetName)
+			if value then
+				scored[#scored + 1] = {name = skillsetName, value = value}
+			end
+		end
+	end
+	table.sort(scored, function(a, b) return a.value > b.value end)
+	local results = {}
+	local topSkillset = scored[1] and scored[1].name or nil
+	local suppressSecondary = {
+		Technical = true,
+		Stamina = true,
+	}
+	for _, entry in ipairs(scored) do
+		local skillsetName = entry.name
+		local allow = true
+		if suppressSecondary[skillsetName] and skillsetName ~= topSkillset then
+			allow = false
+		end
+		if allow then
+			results[#results + 1] = skillsetName
+			if #results >= maxCount then break end
+		end
+	end
+	return results
+end
+
+local function getPrimarySkillsetLabel(steps)
+	if not steps then return "" end
+	local dominant = getDominantSkillsets(steps, getDisplayedRateValue(), 1)
+	if #dominant == 0 then return "" end
+	return ms.SkillSetsTranslatedByName[dominant[1]] or dominant[1]
+end
+
+local function getPatternBpmForSkillset(steps, rate, skillsetName)
+	if not steps then return nil end
+	local patternIndex = skillsetPatternModIndexByName[skillsetName]
+	local baseKey = skillsetBaseKeyByName[skillsetName] or "NPSBase"
+	local bpmScale = skillsetBpmScaleByName[skillsetName] or 15
+	if not patternIndex then return nil end
+	local okOut, calcOut = pcall(function()
+		return steps:GetCalcDebugOutput()
+	end)
+	local okExt, calcExt = pcall(function()
+		return steps:GetCalcDebugExt()
+	end)
+	if not okOut or not okExt or calcOut == nil or calcExt == nil then return nil end
+	local diffValues = calcOut["CalcDiffValue"]
+	local patternMods = calcExt["DebugTotalPatternMod"]
+	local baseValues = diffValues and diffValues[baseKey]
+	if baseValues == nil and baseKey ~= "NPSBase" then
+		baseValues = diffValues and diffValues["NPSBase"]
+	end
+	if diffValues == nil or patternMods == nil or baseValues == nil then return nil end
+	local baseLeft = getAverageOfNumberList(baseValues[1])
+	local baseRight = getAverageOfNumberList(baseValues[2])
+	local baseNps = 0
+	local baseCount = 0
+	if baseLeft then
+		baseNps = baseNps + baseLeft
+		baseCount = baseCount + 1
+	end
+	if baseRight then
+		baseNps = baseNps + baseRight
+		baseCount = baseCount + 1
+	end
+	if baseCount == 0 then return nil end
+	baseNps = (baseNps / baseCount) * rate
+	local patternLeft = patternMods["Left"] and patternMods["Left"][patternIndex]
+	local patternRight = patternMods["Right"] and patternMods["Right"][patternIndex]
+	local modLeft = getAverageOfNumberList(patternLeft)
+	local modRight = getAverageOfNumberList(patternRight)
+	local patternMod = 0
+	local modCount = 0
+	if modLeft then
+		patternMod = patternMod + modLeft
+		modCount = modCount + 1
+	end
+	if modRight then
+		patternMod = patternMod + modRight
+		modCount = modCount + 1
+	end
+	if modCount == 0 then return nil end
+	patternMod = patternMod / modCount
+	return math.floor((baseNps * patternMod * bpmScale) + 0.5)
+end
+
+local function getMinaPatternBpmBreakdown(steps)
+	if not steps then return "" end
+	local dominant = getDominantSkillsets(steps, getDisplayedRateValue(), 2)
+	if #dominant == 0 then return "" end
+	local parts = {}
+	for _, skillsetName in ipairs(dominant) do
+		local bpm = getPatternBpmForSkillset(steps, getDisplayedRateValue(), skillsetName)
+		if bpm then
+			local translated = ms.SkillSetsTranslatedByName[skillsetName] or skillsetName
+			parts[#parts + 1] = string.format("%dBPM %s", bpm, translated)
+		end
+	end
+	return table.concat(parts, ", ")
+end
+
+local function getRecordLabel(recordScore)
+	if not recordScore then return "" end
+	if recordScore == score and score == SCOREMAN:GetMostRecentScore() then
+		return "New record!"
+	end
+	local recordPercent = recordScore:GetWifeScore() * 100
+	if recordPercent > 99 then
+		return string.format("Your record: %05.4f%%", recordPercent)
+	end
+	return string.format("Your record: %05.2f%%", recordPercent)
+end
+
+local function getClearTypeLabel()
+	if not score then return "-" end
+	return getClearTypeFromScore(PLAYER_1, score, 0)
+end
+
+local function getClearTypeColor()
+	if not score then return color("#FFFFFF") end
+	return getClearTypeFromScore(PLAYER_1, score, 2)
+end
 
 local function scoreBoard(pn, position)
 	local dvtTmp = {}
@@ -262,36 +533,36 @@ local function scoreBoard(pn, position)
 		Def.Quad {
 			Name = "DisplayBG",
 			InitCommand = function(self)
-				self:xy(frameX - 5, frameY + 5)
-				self:zoomto(frameWidth + 10, 217)
+				self:xy(frameX - 5, frameY - 10)
+				self:zoomto(frameWidth + 10, 335)
 				self:halign(0):valign(0)
-				self:diffuse(getMainColor("tabs"))
+				self:diffuse(color("#000000")):diffusealpha(0.5)
 			end,
 		},
 		Def.Quad {
 			Name = "DisplayHorizontalLine1",
 			InitCommand = function(self)
-				self:xy(frameX, frameY + 30)
+				self:xy(frameX, frameY + 27)
 				self:zoomto(frameWidth, 2)
 				self:halign(0)
 				self:diffuse(getMainColor("highlight"))
-				self:diffusealpha(0.5)
+				self:diffusealpha(0)
 			end,
 		},
 		Def.Quad {
 			Name = "DisplayHorizontalLine2",
 			InitCommand = function(self)
-				self:xy(frameX, frameY + 55)
+				self:xy(frameX, frameY + 49)
 				self:zoomto(frameWidth, 2)
 				self:halign(0)
 				self:diffuse(getMainColor("highlight"))
-				self:diffusealpha(0.5)
+				self:diffusealpha(0)
 			end,
 		},
 		Def.ActorFrame {
 			Name = "CustomScoringDisplay",
 			InitCommand = function(self)
-				self:xy(frameX - 5, frameY + 5)
+				self:xy(frameX - 5, frameY - 10)
 				self:visible(usingCustomWindows)
 			end,
 			ToggleCustomWindowsMessageCommand = function(self)
@@ -402,10 +673,10 @@ local function scoreBoard(pn, position)
 		LoadFont("Common Large") .. {
 			Name = "MSDDisplay",
 			InitCommand = function(self)
-				self:xy(frameX + 3, frameY + 32)
-				self:zoom(0.5)
+				self:xy(frameX + 30, frameY + 230)
+				self:zoom(0.6)
 				self:halign(0):valign(0)
-				self:maxwidth(200)
+				self:maxwidth(90 / 0.6)
 			end,
 			BeginCommand = function(self)
 				self:queuecommand("Set")
@@ -414,16 +685,7 @@ local function scoreBoard(pn, position)
 				self:queuecommand("Set")
 			end,
 			SetCommand = function(self)
-				local top = SCREENMAN:GetTopScreen()
-				local rate
-				if top:GetName() == "ScreenNetEvaluation" then
-					rate = score:GetMusicRate()
-				else
-					rate = top:GetReplayRate()
-					if not rate then rate = getCurRateValue() end
-				end
-				rate = notShit.round(rate,3)
-				local meter = GAMESTATE:GetCurrentSteps():GetMSD(rate, 1)
+				local meter = GAMESTATE:GetCurrentSteps():GetMSD(getDisplayedRateValue(), 1)
 				if meter < 10 then
 					self:settextf("%4.2f", meter)
 				else
@@ -435,10 +697,10 @@ local function scoreBoard(pn, position)
 		LoadFont("Common Large") .. {
 			Name = "SSRDisplay",
 			InitCommand = function(self)
-				self:xy(frameWidth + frameX - 3, frameY + 32)
-				self:zoom(0.5)
+				self:xy(frameX + frameWidth - 10, frameY + 230)
+				self:zoom(0.6)
 				self:halign(1):valign(0)
-				self:maxwidth(200)
+				self:maxwidth(90 / 0.6)
 			end,
 			BeginCommand = function(self)
 				self:queuecommand("Set")
@@ -455,19 +717,17 @@ local function scoreBoard(pn, position)
 		LoadFont("Common Large") .. {
 			Name = "DifficultyName",
 			InitCommand = function(self)
-				self:xy(frameWidth + frameX - 3, frameY + 7)
-				self:zoom(0.5)
-				self:halign(1):valign(0)
-				self:maxwidth(200)
+				self:xy(frameX + frameWidth / 2, frameY + 16)
+				self:zoom(0.8)
+				self:halign(0.5):valign(0)
+				self:maxwidth(180 / 0.8)
 			end,
 			BeginCommand = function(self)
 				self:queuecommand("Set")
 			end,
 			SetCommand = function(self)
-				local steps = GAMESTATE:GetCurrentSteps()
-				local diff = getDifficulty(steps:GetDifficulty())
-				self:settext(getShortDifficulty(diff))
-				self:diffuse(getDifficultyColor(GetCustomDifficulty(steps:GetStepsType(), steps:GetDifficulty())))
+				self:settext(getDisplayedRateText())
+				self:diffuse(color("#FFFFFF"))
 			end,
 		},
 		Def.ActorFrame {
@@ -478,8 +738,8 @@ local function scoreBoard(pn, position)
 			UIElements.QuadButton(1, 1) .. {
 				Name = "MouseHoverBG",
 				InitCommand = function(self)
-					self:xy(frameX + 3, frameY + 9)
-					self:zoomto(capWideScale(320,490)/2.2,20)
+					self:xy(frameX + 8, frameY + 42)
+					self:zoomto(frameWidth - 16, 18)
 					self:halign(0):valign(0)
 					self:diffusealpha(0)
 				end,
@@ -505,27 +765,18 @@ local function scoreBoard(pn, position)
 			LoadFont("Common Large") .. {
 				Name = "NormalText",
 				InitCommand = function(self)
-					self:xy(frameX + 3, frameY + 9)
+					self:xy(frameX + frameWidth / 2, frameY + 44)
 					self:zoom(0.45)
-					self:halign(0):valign(0)
-					self:maxwidth(capWideScale(320, 500))
+					self:halign(0.5):valign(0)
+					self:maxwidth((frameWidth - 20) / 0.45)
 					self:visible(true)
 				end,
 				BeginCommand = function(self)
 					self:queuecommand("Set")
 				end,
 				SetCommand = function(self)
-					local wv = score:GetWifeVers()
-					local js = judge ~= 9 and judge or "ustice"
-					local rescoretable = getRescoreElements(score)
-					local rescorepercent = getRescoredWife3Judge(3, judge, rescoretable)
-					wv = 3 -- this should really only be applicable if we can convert the score
-					local ws = "Wife" .. wv .. " J"
-					self:diffuse(getGradeColor(score:GetWifeGrade()))
-					self:settextf(
-						"%05.2f%% (%s)",
-						notShit.floor(rescorepercent, 2), ws .. js
-					)
+					self:diffuse(color("#D8D8E8"))
+					self:settext(getDisplayedColumnsJudgeText())
 				end,
 				ScoreChangedMessageCommand = function(self)
 					self:queuecommand("Set")
@@ -571,27 +822,18 @@ local function scoreBoard(pn, position)
 			LoadFont("Common Large") ..	{-- high precision rollover
 				Name = "LongerText",
 				InitCommand = function(self)
-					self:xy(frameX + 3, frameY + 9)
+					self:xy(frameX + frameWidth / 2, frameY + 44)
 					self:zoom(0.45)
-					self:halign(0):valign(0)
-					self:maxwidth(capWideScale(320, 500))
+					self:halign(0.5):valign(0)
+					self:maxwidth((frameWidth - 20) / 0.45)
 					self:visible(false)
 				end,
 				BeginCommand = function(self)
 					self:queuecommand("Set")
 				end,
 				SetCommand = function(self)
-					local wv = score:GetWifeVers()
-					local js = judge ~= 9 and judge or "ustice"
-					local rescoretable = getRescoreElements(score)
-					local rescorepercent = getRescoredWife3Judge(3, judge, rescoretable)
-					wv = 3 -- this should really only be applicable if we can convert the score
-					local ws = "Wife" .. wv .. " J"
-					self:diffuse(getGradeColor(score:GetWifeGrade()))
-					self:settextf(
-						"%05.4f%% (%s)",
-						notShit.floor(rescorepercent, 4), ws .. js
-					)
+					self:diffuse(color("#D8D8E8"))
+					self:settext(getDisplayedColumnsJudgeText())
 				end,
 				ScoreChangedMessageCommand = function(self)
 					self:queuecommand("Set")
@@ -633,10 +875,11 @@ local function scoreBoard(pn, position)
 		LoadFont("Common Normal") .. {
 			Name = "ModString",
 			InitCommand = function(self)
-				self:xy(frameX + 2.4, frameY + 63)
-				self:zoom(0.40)
+				self:xy(frameX + 2.4, frameY + 56)
+				self:zoom(0.34)
 				self:halign(0)
-				self:maxwidth(frameWidth / 0.41)
+				self:maxwidth(frameWidth / 0.35)
+				self:visible(false)
 			end,
 			BeginCommand = function(self)
 				self:queuecommand("Set")
@@ -657,7 +900,7 @@ local function scoreBoard(pn, position)
 		LoadFont("Common Large") .. {
 			Name = "ChordCohesionIndicator",
 			InitCommand = function(self)
-				self:xy(frameX + 3, frameY + 210)
+				self:xy(frameX + 3, frameY + 199)
 				self:zoom(0.25)
 				self:halign(0)
 				self:maxwidth(capWideScale(get43size(100), 160)/0.25)
@@ -715,21 +958,21 @@ local function scoreBoard(pn, position)
 			Def.Quad {
 				Name = "BG",
 				InitCommand = function(self)
-					self:xy(frameX, frameY + 80 + ((judgmentIndex - 1) * 22))
-					self:zoomto(frameWidth, 18)
+					self:xy(frameX, frameY + 70 + ((judgmentIndex - 1) * 24))
+					self:zoomto(frameWidth, 24)
 					self:halign(0)
 					self:diffuse(byJudgment(judgmentName))
-					self:diffusealpha(0.5)
+					self:diffusealpha(0.8)
 				end,
 			},
 			Def.Quad {
 				Name = "Fill",
 				InitCommand = function(self)
-					self:xy(frameX, frameY + 80 + ((judgmentIndex - 1) * 22))
-					self:zoomto(0, 18)
+					self:xy(frameX, frameY + 70 + ((judgmentIndex - 1) * 24))
+					self:zoomto(frameWidth, 24)
 					self:halign(0)
 					self:diffuse(byJudgment(judgmentName))
-					self:diffusealpha(0.5)
+					self:diffusealpha(0.4)
 				end,
 				BeginCommand = function(self)
 					self:glowshift()
@@ -744,35 +987,37 @@ local function scoreBoard(pn, position)
 				end,
 				SetCommand = function(self)
 					self:finishtweening()
-					self:bounceend(0.2)
-					self:zoomx(frameWidth * self:GetParent().jcount / totalTaps)
+					self:zoomx(frameWidth)
 				end,
 			},
 			LoadFont("Common Large") .. {
 				Name = "Name",
 				InitCommand = function(self)
-					self:xy(frameX + 10, frameY + 79.3 + ((judgmentIndex - 1) * 22))
-					self:zoom(0.25)
-					self:halign(0)
+					self:xy(frameX + 8, frameY + 70 + ((judgmentIndex - 1) * 24) + 12)
+					self:zoom(0.32)
+					self:halign(0):valign(0.5)
 				end,
 				BeginCommand = function(self)
 					if aboutToForceWindowSettings then return end
 					self:queuecommand("Set")
 				end,
 				SetCommand = function(self)
+					local label
 					if usingCustomWindows then
-						self:settext(getCustomWindowConfigJudgmentName(judgmentName))
+						label = getCustomWindowConfigJudgmentName(judgmentName)
 					else
-						self:settext(getJudgeStrings(judgmentName))
+						label = getJudgeStrings(judgmentName)
 					end
+					self:settextf("%s: %d", label, self:GetParent().jcount)
 				end,
 			},
 			LoadFont("Common Large") .. {
 				Name = "Count",
 				InitCommand = function(self)
-					self:xy(frameX + frameWidth - 40, frameY + 79.3 + ((judgmentIndex - 1) * 22))
-					self:zoom(0.25)
-					self:halign(1)
+					self:xy(frameX + frameWidth - 48, frameY + 70 + ((judgmentIndex - 1) * 24) + 12)
+					self:zoom(0.32)
+					self:halign(1):valign(0.5)
+					self:visible(false)
 				end,
 				BeginCommand = function(self)
 					if aboutToForceWindowSettings then return end
@@ -785,9 +1030,9 @@ local function scoreBoard(pn, position)
 			LoadFont("Common Normal") .. {
 				Name = "Percentage",
 				InitCommand = function(self)
-					self:xy(frameX + frameWidth - 38, frameY + 79.7 + ((judgmentIndex - 1) * 22))
-					self:zoom(0.3)
-					self:halign(0)
+					self:xy(frameX + frameWidth - 8, frameY + 70 + ((judgmentIndex - 1) * 24) + 12)
+					self:zoom(0.32)
+					self:halign(1):valign(0.5)
 				end,
 				BeginCommand = function(self)
 					if aboutToForceWindowSettings then return end
@@ -898,6 +1143,9 @@ local function scoreBoard(pn, position)
 	local mapaHover = nil
 	t[#t+1] = Def.ActorFrame {
 		Name = "MAPARatioContainer",
+		InitCommand = function(self)
+			self:visible(false)
+		end,
 
 		UIElements.QuadButton(1,1) .. {
 			Name = "MAPAHoverThing",
@@ -1080,16 +1328,16 @@ local function scoreBoard(pn, position)
 
 			LoadFont("Common Normal") .. {
 				InitCommand = function(self)
-					self:xy(frameX, frameY + 224 + 10 * i)
-					self:zoom(0.4)
+					self:xy(frameX, frameY + 206 + 9 * i)
+					self:zoom(0.34)
 					self:halign(0)
 					self:settext(radars_translated[radars[i]])
 				end,
 			},
 			LoadFont("Common Normal") .. {
 				InitCommand = function(self)
-					self:xy(frameWidth / 2, frameY + 224 + 10 * i)
-					self:zoom(0.4)
+					self:xy(frameWidth / 2 - 8, frameY + 206 + 9 * i)
+					self:zoom(0.34)
 					self:halign(1)
 				end,
 				BeginCommand = function(self)
@@ -1110,10 +1358,13 @@ local function scoreBoard(pn, position)
 	end
 	local rb = Def.ActorFrame {
 		Name = "RadarContainer",
+		InitCommand = function(self)
+			self:visible(false)
+		end,
 		Def.Quad {
 			Name = "BG",
 			InitCommand = function(self)
-				self:xy(frameX - 5, frameY + 226):zoomto(frameWidth / 2 - 10, 56.5)
+				self:xy(frameX - 5, frameY + 207):zoomto(frameWidth / 2 - 10, 52)
 				self:halign(0):valign(0)
 				self:diffuse(getMainColor("tabs"))
 			end,
@@ -1245,15 +1496,15 @@ local function scoreBoard(pn, position)
 		}
 		-- if theres a middle lane, display its cbs too
 		local lines = ((ncol+1) % 2 == 0) and #statNames-1  or #statNames
-		local tzoom = lines == 5 and 0.4 or 0.3
-		local ySpacing = lines == 5 and 10 or 8.5
+		local tzoom = lines == 5 and 0.34 or 0.28
+		local ySpacing = lines == 5 and 9 or 8
 		local function statsLine(i)
 			return Def.ActorFrame {
 				Name = "StatLine"..statNames[i],
 				LoadFont("Common Normal") .. {
 					Name = "StatText",
 					InitCommand = function(self)
-						self:xy(frameX + capWideScale(get43size(130), 153), frameY + 224 + ySpacing * i)
+						self:xy(frameX + 144, frameY + 206 + ySpacing * i)
 						self:zoom(tzoom)
 						self:halign(0)
 						self:settext(statNames[i])
@@ -1267,12 +1518,12 @@ local function scoreBoard(pn, position)
 					SetCommand = function(self, params)
 						local statValues = scoreStatistics(params ~= nil and params.score or score)
 						if i < 4 then
-							self:xy(frameWidth + 20, frameY + 224 + ySpacing * i)
+							self:xy(frameWidth + 12, frameY + 206 + ySpacing * i)
 							self:zoom(tzoom)
 							self:halign(1)
 							self:settextf("%5.2fms", statValues[i])
 						else
-							self:xy(frameWidth + 20, frameY + 224 + ySpacing * i)
+							self:xy(frameWidth + 12, frameY + 206 + ySpacing * i)
 							self:zoom(tzoom)
 							self:halign(1)
 							self:settext(statValues[i])
@@ -1302,6 +1553,9 @@ local function scoreBoard(pn, position)
 
 		local sl = Def.ActorFrame {
 			Name = "ScoreStatsContainer",
+			InitCommand = function(self)
+				self:visible(false)
+			end,
 			Def.Quad {
 				Name = "BG",
 				InitCommand = function(self)
@@ -1318,7 +1572,119 @@ local function scoreBoard(pn, position)
 		t[#t+1] = sl
 	end
 
-	
+	t[#t+1] = Def.ActorFrame {
+		Name = "JudgmentSummaryDisplay",
+		LoadFont("Common Large") .. {
+			Name = "ComboSummary",
+			InitCommand = function(self)
+				self:xy(frameX + frameWidth / 2, frameY + 230)
+				self:zoom(0.6)
+				self:halign(0.5):valign(0)
+				self:maxwidth(110 / 0.6)
+			end,
+			BeginCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			SetCommand = function(self)
+				self:diffuse(color("#FFFFFF"))
+				self:settextf("%dx", score:GetMaxCombo())
+			end,
+			ScoreChangedMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			LoadedCustomWindowMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			ForceWindowMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+		},
+		LoadFont("Common Normal") .. {
+			Name = "CompactStats",
+			InitCommand = function(self)
+				self:xy(frameX + frameWidth / 2, frameY + 255)
+				self:zoom(0.24)
+				self:halign(0.5):valign(0)
+				self:maxwidth((frameWidth - 8) / 0.24)
+			end,
+			BeginCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			SetCommand = function(self)
+				local marv = usingCustomWindows and lastSnapshot and lastSnapshot:GetJudgments()["W1"] or getRescoredJudge(dvt, judge, 1)
+				local perf = usingCustomWindows and lastSnapshot and lastSnapshot:GetJudgments()["W2"] or getRescoredJudge(dvt, judge, 2)
+				local great = usingCustomWindows and lastSnapshot and lastSnapshot:GetJudgments()["W3"] or getRescoredJudge(dvt, judge, 3)
+				local statValues = scoreStatistics(score)
+				self:settextf(
+					"MA: %.1f:%.1f • PA: %.1f:%.1f • M: %.2fms • SD: %.2fms",
+					marv or 0,
+					perf or 0,
+					perf or 0,
+					great or 0,
+					statValues[1] or 0,
+					statValues[2] or 0
+				)
+			end,
+			ScoreChangedMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			LoadedCustomWindowMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			ForceWindowMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+		},
+		LoadFont("Common Large") .. {
+			Name = "PrimarySkillset",
+			InitCommand = function(self)
+				self:xy(frameX + 6, frameY + 275)
+				self:zoom(0.5)
+				self:halign(0):valign(0)
+				self:maxwidth((frameWidth - 12) / 0.5)
+			end,
+			BeginCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			SetCommand = function(self)
+				local steps = GAMESTATE:GetCurrentSteps()
+				local style = GAMESTATE:GetCurrentStyle()
+				if steps and style and style:ColumnsPerPlayer() == 4 then
+					self:settext(getPrimarySkillsetLabel(steps))
+				else
+					self:settext("")
+				end
+			end,
+			ScoreChangedMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+		},
+		LoadFont("Common Normal") .. {
+			Name = "PatternBreakdown",
+			InitCommand = function(self)
+				self:xy(frameX + 6, frameY + 295)
+				self:zoom(0.35)
+				self:halign(0):valign(0)
+				self:maxwidth((frameWidth - 12) / 0.35)
+			end,
+			BeginCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			SetCommand = function(self)
+				local steps = GAMESTATE:GetCurrentSteps()
+				local style = GAMESTATE:GetCurrentStyle()
+				if steps and style and style:ColumnsPerPlayer() == 4 then
+					self:settext(getMinaPatternBpmBreakdown(steps))
+				else
+					self:settext("")
+				end
+			end,
+			ScoreChangedMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+		},
+	}
+
 	-- life graph
 	local function GraphDisplay()
 		return Def.ActorFrame {

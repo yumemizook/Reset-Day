@@ -1,8 +1,6 @@
 -- refactored a bit but still needs work -mina
 local collapsed = false
 local rtTable
-local rates
-local rateIndex = 1
 local scoreIndex = 1
 local score
 local page = 1 -- Fix for leaderboard glitch
@@ -114,6 +112,18 @@ end
 local function cycleNestedTab()
 	nestedTab = (nestedTab % 3) + 1
 	broadcastNestedTabChanged()
+end
+
+local function getCurrentRateScores()
+	if not rtTable then return nil end
+	local currentRate = notShit.round(getCurRateValue(), 2)
+	for rateKey, scores in pairs(rtTable) do
+		local numericRate = tonumber((tostring(rateKey):gsub("x", "")))
+		if numericRate and math.abs(notShit.round(numericRate, 2) - currentRate) < 0.001 then
+			return scores
+		end
+	end
+	return nil
 end
 
 local moped
@@ -235,35 +245,17 @@ local ret = Def.ActorFrame {
 		end
 	end,
 	CodeMessageCommand = function(self, params) -- this is intentionally bad to remind me to fix other things that are bad -mina
-		if ((getTabIndex() == 2 and nestedTab == 2) and not collapsed) and DLMAN:GetCurrentRateFilter() then
-			local rate = getCurRateValue()
-			if params.Name == "PrevScore" and rate < MAX_MUSIC_RATE - 0.05 then
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Preferred"):MusicRate(rate + 0.1)
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Song"):MusicRate(rate + 0.1)
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Current"):MusicRate(rate + 0.1)
-				MESSAGEMAN:Broadcast("CurrentRateChanged")
-			elseif params.Name == "NextScore" and rate > MIN_MUSIC_RATE + 0.05 then
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Preferred"):MusicRate(rate - 0.1)
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Song"):MusicRate(rate - 0.1)
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Current"):MusicRate(rate - 0.1)
-				MESSAGEMAN:Broadcast("CurrentRateChanged")
-			end
-			if params.Name == "PrevRate" and rate < MAX_MUSIC_RATE then
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Preferred"):MusicRate(rate + 0.05)
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Song"):MusicRate(rate + 0.05)
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Current"):MusicRate(rate + 0.05)
-				MESSAGEMAN:Broadcast("CurrentRateChanged")
-			elseif params.Name == "NextRate" and rate > MIN_MUSIC_RATE then
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Preferred"):MusicRate(rate - 0.05)
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Song"):MusicRate(rate - 0.05)
-				GAMESTATE:GetSongOptionsObject("ModsLevel_Current"):MusicRate(rate - 0.05)
-				MESSAGEMAN:Broadcast("CurrentRateChanged")
+		if (getTabIndex() == 2 and nestedTab == 2) and not collapsed then
+			if params.Name == "PrevRate" or params.Name == "NextRate" or params.Name == "PrevScore" or params.Name == "NextScore" then
+				return
 			end
 		end
 	end,
 	CurrentRateChangedMessageCommand = function(self)
-		if ((getTabIndex() == 2 and nestedTab == 2) or collapsed) and DLMAN:GetCurrentRateFilter() then
-			moped:queuecommand("GetFilteredLeaderboard")
+		if (getTabIndex() == 2 and nestedTab == 2) or collapsed then
+			if moped then
+				moped:queuecommand("GetFilteredLeaderboard")
+			end
 		end
 	end
 }
@@ -272,15 +264,16 @@ local cheese
 -- eats only inputs that would scroll to a new score
 local function input(event)
 	if isOver(cheese:GetChild("FrameDisplay")) then
+		local currentRateScores = getCurrentRateScores()
 		if event.DeviceInput.button == "DeviceButton_mousewheel up" and event.type == "InputEventType_FirstPress" then
-			if nestedTab == 1 and rtTable and rtTable[rates[rateIndex]] ~= nil then
+			if nestedTab == 1 and currentRateScores ~= nil then
 				scoreOffset = math.max(0, scoreOffset - 1)
 				cheese:playcommand("Display")
 				return true
 			end
 		elseif event.DeviceInput.button == "DeviceButton_mousewheel down" and event.type == "InputEventType_FirstPress" then
-			if nestedTab == 1 and rtTable ~= nil and rtTable[rates[rateIndex]] ~= nil then
-				local maxOffset = math.max(0, #rtTable[rates[rateIndex]] - 5)
+			if nestedTab == 1 and currentRateScores ~= nil then
+				local maxOffset = math.max(0, #currentRateScores - 5)
 				scoreOffset = math.min(maxOffset, scoreOffset + 1)
 				cheese:playcommand("Display")
 				return true
@@ -304,7 +297,6 @@ local t = Def.ActorFrame {
 			if GAMESTATE:GetCurrentSong() ~= nil then
 				rtTable = getRateTable()
 				if rtTable ~= nil then
-					rates, rateIndex = getUsedRates(rtTable)
 					scoreIndex = 1
 					scoreOffset = 0
 					self:queuecommand("Display")
@@ -322,45 +314,50 @@ local t = Def.ActorFrame {
 		self:queuecommand("Set")
 	end,
 	CurrentStepsChangedMessageCommand = function(self)
+		rtTable = getRateTable()
+		scoreIndex = 1
+		scoreOffset = 0
 		self:playcommand("On")
 		self:playcommand("Display")
 	end,
+	CurrentRateChangedMessageCommand = function(self)
+		if nestedTab == 1 then
+			rtTable = getRateTable()
+			scoreIndex = 1
+			scoreOffset = 0
+			self:playcommand("Display")
+		end
+	end,
 	CodeMessageCommand = function(self, params)
-		if nestedTab == 1 and rtTable ~= nil and rtTable[rates[rateIndex]] ~= nil then
-			if params.Name == "NextRate" then
-				self:queuecommand("NextRate")
-			elseif params.Name == "PrevRate" then
-				self:queuecommand("PrevRate")
-			elseif params.Name == "NextScore" then
+		local currentRateScores = getCurrentRateScores()
+		if nestedTab == 1 and currentRateScores ~= nil then
+			if params.Name == "NextScore" then
 				self:queuecommand("NextScore")
 			elseif params.Name == "PrevScore" then
 				self:queuecommand("PrevScore")
 			end
 		end
 	end,
-	NextRateCommand = function(self)
-		rateIndex = ((rateIndex) % (#rates)) + 1
-		scoreIndex = 1
-		scoreOffset = 0
-		self:queuecommand("Display")
-	end,
-	PrevRateCommand = function(self)
-		rateIndex = ((rateIndex - 2) % (#rates)) + 1
-		scoreIndex = 1
-		scoreOffset = 0
-		self:queuecommand("Display")
-	end,
 	NextScoreCommand = function(self)
-		scoreIndex = ((scoreIndex) % (#rtTable[rates[rateIndex]])) + 1
-		self:queuecommand("Display")
+		local currentRateScores = getCurrentRateScores()
+		if currentRateScores ~= nil then
+			scoreIndex = ((scoreIndex) % (#currentRateScores)) + 1
+			self:queuecommand("Display")
+		end
 	end,
 	PrevScoreCommand = function(self)
-		scoreIndex = ((scoreIndex - 2) % (#rtTable[rates[rateIndex]])) + 1
-		self:queuecommand("Display")
+		local currentRateScores = getCurrentRateScores()
+		if currentRateScores ~= nil then
+			scoreIndex = ((scoreIndex - 2) % (#currentRateScores)) + 1
+			self:queuecommand("Display")
+		end
 	end,
 	DisplayCommand = function(self)
-		if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
-			score = rtTable[rates[rateIndex]][scoreIndex]
+		local currentRateScores = getCurrentRateScores()
+		if currentRateScores ~= nil then
+			scoreIndex = math.min(math.max(scoreIndex, 1), #currentRateScores)
+			scoreOffset = math.min(math.max(scoreOffset, 0), math.max(0, #currentRateScores - 5))
+			score = currentRateScores[scoreIndex]
 			if score then
 				hasReplayData = score:HasReplayData()
 				setScoreForPlot(score)
@@ -470,8 +467,9 @@ local l = Def.ActorFrame {
 					end,
 				},
 					DisplayCommand = function(self)
-					if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
-						score = rtTable[rates[rateIndex]][i + scoreOffset]
+					local currentRateScores = getCurrentRateScores()
+					if currentRateScores ~= nil then
+						score = currentRateScores[i + scoreOffset]
 						if score then
 							self:visible(true)
 							self:playcommand("SetScore")
@@ -580,9 +578,10 @@ t[#t + 1] = Def.Quad {
 	DisplayCommand = function(self)
 		self:finishtweening()
 		self:smooth(0.15)
-		if rtTable and rates and rates[rateIndex] and rtTable[rates[rateIndex]] then
-			self:zoomy(((frameHeight - offsetY - 30) / #rtTable[rates[rateIndex]]) * 5)
-			self:y((((frameHeight - offsetY - 30) / #rtTable[rates[rateIndex]]) * scoreOffset) + offsetY + 30)
+		local currentRateScores = getCurrentRateScores()
+		if currentRateScores ~= nil then
+			self:zoomy(((frameHeight - offsetY - 30) / #currentRateScores) * 5)
+			self:y((((frameHeight - offsetY - 30) / #currentRateScores) * scoreOffset) + offsetY + 30)
 		else
 			self:zoomy(0)
 		end

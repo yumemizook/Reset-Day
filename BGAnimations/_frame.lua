@@ -5,6 +5,8 @@ local borderWidth = 4
 local hoverAlpha = 0.6
 local showVisualizer = themeConfig:get_data().global.ShowVisualizer
 local frameVisualizerColor = color("#FFFFFF")
+local loadingScreen = Var("LoadingScreen") or ""
+local useEvaluationFrame = loadingScreen == "ScreenEvaluation" or loadingScreen == "ScreenEvaluationNormal" or loadingScreen == "ScreenNetEvaluation"
 
 local function frameVisualizer(y, maxHeight, alpha)
 	local vis = audioVisualizer:new {
@@ -103,167 +105,169 @@ if showVisualizer then
 	t[#t + 1] = footerVisualizer()
 end
 
--- Song Information (Marquee Text)
-t[#t + 1] = Def.ActorFrame {
-	InitCommand = function(self)
-		self:xy(175, SCREEN_HEIGHT - bottomFrameHeight / 2)
-	end,
-
-	LoadFont("Common Normal") .. {
+if not useEvaluationFrame then
+	-- Song Information (Marquee Text)
+	t[#t + 1] = Def.ActorFrame {
 		InitCommand = function(self)
-			self:zoom(0.45):halign(0):diffuse(color("#FFFFFF"))
+			self:xy(175, SCREEN_HEIGHT - bottomFrameHeight / 2)
 		end,
-		SetCommand = function(self)
-			local song = GAMESTATE:GetCurrentSong()
-			local str = "None"
-			if song then
-				local title = song:GetDisplayMainTitle()
-				local artist = song:GetDisplayArtist()
-				str = title .. " - " .. artist
-				
-				if HandleSongChangeForHistory then
-					HandleSongChangeForHistory()
-				end
-			else
-				str = "MUSIC PLAYER: NONE"
-			end
 
-			-- Reset state and set text
-			self:stoptweening():x(0)
-			self:settext(str .. "    ") -- Get width of one instance + padding
-			local singleWidth = self:GetZoomedWidth()
-			self:settext(str .. "    " .. str .. "    ") -- Double it for seamless loop
-			
-			-- Start the seamless scroll
-			local scrollTime = singleWidth / 30 -- Speed: 30 pixels per second
-			
-			local function marquee(self)
-				self:x(0):linear(scrollTime):x(-singleWidth):queuecommand("MarqueeSnap")
-			end
-			self:queuecommand("MarqueeSnap")
-		end,
-		MarqueeSnapCommand = function(self)
-			-- Snapping back to 0 creates the seamless loop
-			local str = self:GetText()
-			local singleWidth = self:GetZoomedWidth() / 2
-			local scrollTime = singleWidth / 30
-			self:x(0):linear(scrollTime):x(-singleWidth):queuecommand("MarqueeSnap")
-		end,
-		OnCommand = function(self) self:playcommand("Set") end,
-		CurrentSongChangedMessageCommand = function(self) self:playcommand("Set") end,
-	}
-}
-
--- Clipping Covers (These are OPAQUE black to 100% hide the text overflow)
--- Then the Accent Overlay (if we want it on top) or just same color?
--- Let's put these AFTER the text but BEFORE the accent overlay?
--- No, they should be OPAQUE.
-
-local function clippingCover(x, width)
-	return Def.ActorFrame {
-		Def.Quad { -- Opaque Base to hide text
+		LoadFont("Common Normal") .. {
 			InitCommand = function(self)
-				self:xy(x, SCREEN_HEIGHT - bottomFrameHeight):zoomto(width, bottomFrameHeight):halign(0):valign(0):diffuse(color("#000000"))
+				self:zoom(0.45):halign(0):diffuse(color("#FFFFFF"))
+			end,
+			SetCommand = function(self)
+				local song = GAMESTATE:GetCurrentSong()
+				local str = "None"
+				if song then
+					local title = song:GetDisplayMainTitle()
+					local artist = song:GetDisplayArtist()
+					str = title .. " - " .. artist
+					
+					if HandleSongChangeForHistory then
+						HandleSongChangeForHistory()
+					end
+				else
+					str = "MUSIC PLAYER: NONE"
+				end
+
+				-- Reset state and set text
+				self:stoptweening():x(0)
+				self:settext(str .. "    ") -- Get width of one instance + padding
+				local singleWidth = self:GetZoomedWidth()
+				self:settext(str .. "    " .. str .. "    ") -- Double it for seamless loop
+				
+				-- Start the seamless scroll
+				local scrollTime = singleWidth / 30 -- Speed: 30 pixels per second
+				
+				local function marquee(self)
+					self:x(0):linear(scrollTime):x(-singleWidth):queuecommand("MarqueeSnap")
+				end
+				self:queuecommand("MarqueeSnap")
+			end,
+			MarqueeSnapCommand = function(self)
+				-- Snapping back to 0 creates the seamless loop
+				local str = self:GetText()
+				local singleWidth = self:GetZoomedWidth() / 2
+				local scrollTime = singleWidth / 30
+				self:x(0):linear(scrollTime):x(-singleWidth):queuecommand("MarqueeSnap")
+			end,
+			OnCommand = function(self) self:playcommand("Set") end,
+			CurrentSongChangedMessageCommand = function(self) self:playcommand("Set") end,
+		}
+	}
+
+	-- Clipping Covers (These are OPAQUE black to 100% hide the text overflow)
+	-- Then the Accent Overlay (if we want it on top) or just same color?
+	-- Let's put these AFTER the text but BEFORE the accent overlay?
+	-- No, they should be OPAQUE.
+
+	local function clippingCover(x, width)
+		return Def.ActorFrame {
+			Def.Quad { -- Opaque Base to hide text
+				InitCommand = function(self)
+					self:xy(x, SCREEN_HEIGHT - bottomFrameHeight):zoomto(width, bottomFrameHeight):halign(0):valign(0):diffuse(color("#000000"))
+				end
+			},
+			Def.Quad { -- Matching tint
+				InitCommand = function(self)
+					self:xy(x, SCREEN_HEIGHT - bottomFrameHeight):zoomto(width, bottomFrameHeight):halign(0):valign(0):diffuse(color("#111111")):diffusealpha(0.6)
+				end,
+				SetDynamicAccentColorMessageCommand = function(self, params)
+					self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.6)
+				end
+			}
+		}
+	end
+
+	t[#t + 1] = clippingCover(0, 175) -- Left cover
+	t[#t + 1] = clippingCover(425, SCREEN_WIDTH - 425) -- Right cover
+  
+	-- Header Buttons
+	t[#t + 1] = headerButton(10, "", "≡", function() MESSAGEMAN:Broadcast("ToggleMenu") end)
+	t[#t + 1] = headerButton(40, "Options", "⚙", function() SCREENMAN:SetNewScreen("ScreenOptionsService") end)
+	t[#t + 1] = headerButton(115, "Upload All", "", function()
+		if DLMAN:IsLoggedIn() then
+			DLMAN:UploadAllScores()
+		else
+			ms.ok("You must be logged in...")
+		end
+	end)
+	t[#t + 1] = headerButton(210, "Stats", "", function() MESSAGEMAN:Broadcast("ToggleStatsOverlay") end)
+  
+	-- Footer Elements (Drawn on top of covers)
+	-- Back Button
+	t[#t + 1] = footerButton(10, "Back", "", function() SCREENMAN:GetTopScreen():Cancel() end)
+
+	-- Music Player Controls
+	t[#t + 1] = footerButton(80, "", "|<<", function() 
+		if SongHistory and SongHistory.GetPrevious then
+			local prev = SongHistory.GetPrevious()
+			if prev then
+				local top = SCREENMAN:GetTopScreen()
+				if top and top.GetMusicWheel then
+					top:GetMusicWheel():SelectSong(prev)
+				end
+			end
+		end
+	end) .. {
+		MusicHistoryChangedMessageCommand = function(self)
+			if SongHistory and #SongHistory.stack > 1 then
+				self:diffuse(color("#FFFFFF")):diffusealpha(1)
+			else
+				self:diffuse(color("#666666")):diffusealpha(0.6)
+			end
+		end,
+		OnCommand = function(self) self:playcommand("MusicHistoryChanged") end
+	}
+
+	local isPaused = false
+	t[#t + 1] = footerButton(110, "", "||", function() 
+		local top = SCREENMAN:GetTopScreen()
+		if top and top.PauseSampleMusic then
+			top:PauseSampleMusic()
+			MESSAGEMAN:Broadcast("MusicPauseToggled")
+		end
+	end) .. {
+		MusicPauseToggledMessageCommand = function(self)
+			isPaused = not isPaused
+			self:settext(isPaused and "" or "||")
+		end
+	}
+
+	t[#t + 1] = footerButton(135, "", ">>|", function() 
+		if SelectRandomSong then
+			SelectRandomSong()
+		end
+	end)
+
+	-- System Information (Version and Time)
+	t[#t + 1] = Def.ActorFrame {
+		InitCommand = function(self)
+			self:xy(SCREEN_WIDTH - 10, SCREEN_HEIGHT - bottomFrameHeight / 2)
+		end,
+		
+		-- Version
+		LoadFont("Common Normal") .. {
+			InitCommand = function(self)
+				self:y(-8):zoom(0.35):halign(1)
+				self:settext("Etterna " .. ProductVersion())
 			end
 		},
-		Def.Quad { -- Matching tint
+		
+		-- Time
+		LoadFont("Common Normal") .. {
 			InitCommand = function(self)
-				self:xy(x, SCREEN_HEIGHT - bottomFrameHeight):zoomto(width, bottomFrameHeight):halign(0):valign(0):diffuse(color("#111111")):diffusealpha(0.6)
+				self:y(6):zoom(0.35):halign(1)
 			end,
-			SetDynamicAccentColorMessageCommand = function(self, params)
-				self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.6)
-			end
+			UpdateCommand = function(self)
+				self:settext(os.date("%d/%m/%Y %I:%M:%S %p"))
+				self:sleep(1):queuecommand("Update")
+			end,
+			OnCommand = function(self) self:queuecommand("Update") end
 		}
 	}
 end
-
-t[#t + 1] = clippingCover(0, 175) -- Left cover
-t[#t + 1] = clippingCover(425, SCREEN_WIDTH - 425) -- Right cover
- 
- -- Header Buttons
- t[#t + 1] = headerButton(10, "", "≡", function() MESSAGEMAN:Broadcast("ToggleMenu") end)
- t[#t + 1] = headerButton(40, "Options", "⚙", function() SCREENMAN:SetNewScreen("ScreenOptionsService") end)
- t[#t + 1] = headerButton(115, "Upload All", "�", function()
-	if DLMAN:IsLoggedIn() then
-		DLMAN:UploadAllScores()
-	else
-		ms.ok("You must be logged in...")
-	end
-end)
- t[#t + 1] = headerButton(210, "Stats", "📈", function() MESSAGEMAN:Broadcast("ToggleStatsOverlay") end)
- 
- -- Footer Elements (Drawn on top of covers)
- -- Back Button
- t[#t + 1] = footerButton(10, "Back", "⇽", function() SCREENMAN:GetTopScreen():Cancel() end)
-
--- Music Player Controls
-t[#t + 1] = footerButton(80, "", "|<<", function() 
-	if SongHistory and SongHistory.GetPrevious then
-		local prev = SongHistory.GetPrevious()
-		if prev then
-			local top = SCREENMAN:GetTopScreen()
-			if top and top.GetMusicWheel then
-				top:GetMusicWheel():SelectSong(prev)
-			end
-		end
-	end
-end) .. {
-	MusicHistoryChangedMessageCommand = function(self)
-		if SongHistory and #SongHistory.stack > 1 then
-			self:diffuse(color("#FFFFFF")):diffusealpha(1)
-		else
-			self:diffuse(color("#666666")):diffusealpha(0.6)
-		end
-	end,
-	OnCommand = function(self) self:playcommand("MusicHistoryChanged") end
-}
-
-local isPaused = false
-t[#t + 1] = footerButton(110, "", "||", function() 
-	local top = SCREENMAN:GetTopScreen()
-	if top and top.PauseSampleMusic then
-		top:PauseSampleMusic()
-		MESSAGEMAN:Broadcast("MusicPauseToggled")
-	end
-end) .. {
-	MusicPauseToggledMessageCommand = function(self)
-		isPaused = not isPaused
-		self:settext(isPaused and "▶" or "||")
-	end
-}
-
-t[#t + 1] = footerButton(135, "", ">>|", function() 
-	if SelectRandomSong then
-		SelectRandomSong()
-	end
-end)
-
--- System Information (Version and Time)
-t[#t + 1] = Def.ActorFrame {
-	InitCommand = function(self)
-		self:xy(SCREEN_WIDTH - 10, SCREEN_HEIGHT - bottomFrameHeight / 2)
-	end,
-	
-	-- Version
-	LoadFont("Common Normal") .. {
-		InitCommand = function(self)
-			self:y(-8):zoom(0.35):halign(1)
-			self:settext("Etterna " .. ProductVersion())
-		end
-	},
-	
-	-- Time
-	LoadFont("Common Normal") .. {
-		InitCommand = function(self)
-			self:y(6):zoom(0.35):halign(1)
-		end,
-		UpdateCommand = function(self)
-			self:settext(os.date("%d/%m/%Y %I:%M:%S %p"))
-			self:sleep(1):queuecommand("Update")
-		end,
-		OnCommand = function(self) self:queuecommand("Update") end
-	}
-}
 
 -- Profile/Login area (Handled by _PlayerInfo.lua now to avoid overlap)
 --[[

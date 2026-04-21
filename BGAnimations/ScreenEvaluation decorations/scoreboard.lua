@@ -58,7 +58,11 @@ end
 local t = Def.ActorFrame {
 	Name = "scoreBoard",
 	OnCommand = function(self)
+		self:visible(false)
 		SCREENMAN:GetTopScreen():AddInputCallback(input)
+	end,
+	ToggleEvalScoreBoardMessageCommand = function(self)
+		self:visible(not self:GetVisible())
 	end
 }
 

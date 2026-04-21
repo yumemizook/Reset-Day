@@ -40,6 +40,11 @@ local jdgCounts = {} -- Child references for the judge counter
 -- We can also pull in some localized aliases for workhorse functions for a modest speed increase
 local Round = notShit.round
 local Floor = notShit.floor
+local sin = math.sin
+local cos = math.cos
+local atan = math.atan
+local pi = math.pi
+local min = math.min
 local diffusealpha = Actor.diffusealpha
 local diffuse = Actor.diffuse
 local finishtweening = Actor.finishtweening
@@ -430,6 +435,22 @@ local cp =
 				self:settextf("%05.2f%%", wifey)
 			end
 		},
+	LoadFont("Common Normal") ..
+		{
+			Name = "JudgeTier",
+			InitCommand = function(self)
+				self:y(13):zoom(0.3):halign(1):valign(0):diffuse(highlight)
+			end,
+			BeginCommand = function(self)
+				self:settextf("J%d", GetTimingDifficulty())
+			end,
+			JudgeChangedMessageCommand = function(self)
+				self:settextf("J%d", GetTimingDifficulty())
+			end,
+			DoneLoadingNextSongMessageCommand = function(self)
+				self:settextf("J%d", GetTimingDifficulty())
+			end
+		},
 	MovableBorder(100, 13, 1, 0, 0)
 }
 
@@ -756,20 +777,88 @@ separate entities. So you can have both, or one or the other, or neither.
 ]]
 -- User params
 --==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--
-local width = SCREEN_WIDTH / 2 - 100
-local height = 10
-local alpha = 0.7
+local pieOffsetX = 86
+local pieOffsetY = 8
+local pieOuterRadius = 18
+local pieInnerRadius = 12
+local pieSegments = 72
+local pieHitRadius = pieOuterRadius + 10
 --==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--
+local function getProgressBounds()
+	local stps = GAMESTATE:GetCurrentSteps()
+	if stps == nil then
+		return 0, 1
+	end
+	return stps:GetFirstSecond(), stps:GetLastSecond()
+end
+
+local function getSongSeconds()
+	local top = SCREENMAN:GetTopScreen()
+	if top ~= nil then
+		return top:GetSongPosition()
+	end
+	local songPos = GAMESTATE:GetSongPosition()
+	if songPos ~= nil then
+		return songPos:GetMusicSeconds()
+	end
+	return 0
+end
+
+local function getSongProgress()
+	local lb, ub = getProgressBounds()
+	if ub <= lb then
+		return 0
+	end
+	return clamp((getSongSeconds() - lb) / (ub - lb), 0, 1)
+end
+
+local function angleFromPoint(dx, dy)
+	if dx == 0 then
+		return dy >= 0 and pi / 2 or -pi / 2
+	end
+	local ang = atan(dy / dx)
+	if dx < 0 then
+		ang = ang + pi
+	elseif dy < 0 then
+		ang = ang + (pi * 2)
+	end
+	return ang
+end
+
+local function progressFromPoint(dx, dy)
+	return ((angleFromPoint(dx, dy) + (pi / 2)) % (pi * 2)) / (pi * 2)
+end
+
+local function addRingQuad(verts, innerRadius, outerRadius, startAngle, endAngle, c)
+	verts[#verts + 1] = {{cos(startAngle) * outerRadius, sin(startAngle) * outerRadius, 0}, c}
+	verts[#verts + 1] = {{cos(endAngle) * outerRadius, sin(endAngle) * outerRadius, 0}, c}
+	verts[#verts + 1] = {{cos(endAngle) * innerRadius, sin(endAngle) * innerRadius, 0}, c}
+	verts[#verts + 1] = {{cos(startAngle) * innerRadius, sin(startAngle) * innerRadius, 0}, c}
+end
+
+local function buildRingVerts(progress, innerRadius, outerRadius, c, segments)
+	local verts = {}
+	local fill = clamp(progress, 0, 1) * segments
+	local step = (pi * 2) / segments
+	local startAngle = -pi / 2
+	for i = 0, segments - 1 do
+		local covered = min(fill, i + 1) - i
+		if covered > 0 then
+			addRingQuad(verts, innerRadius, outerRadius, startAngle + (i * step), startAngle + ((i + covered) * step), c)
+		end
+	end
+	return verts
+end
+
 local function bounds()
-    local stps = GAMESTATE:GetCurrentSteps()
-    return stps:GetFirstSecond(), stps:GetLastSecond()
+	return getProgressBounds()
 end
 local replaySlider = isReplay and
 	UIElements.QuadButton(1, 1) .. {
         Name = "SliderButtonArea",
         InitCommand = function(self)
-            self:diffusealpha(0.3)
-            self:zoomto(width, height)
+            self:diffusealpha(0.001)
+            self:zoomto(pieHitRadius * 2, pieHitRadius * 2)
         end,
         MouseHoldCommand = function(self, params)
             if params.event ~= "DeviceButton_left mouse button" then return end
@@ -779,13 +868,10 @@ local replaySlider = isReplay and
                 TOOLTIP:Show()
             end
 
-            local localX = clamp(params.MouseX - self:GetTrueX() + width/2, 0, width)
-            local localY = clamp(params.MouseY, 0, height)
-
+            local dx = params.MouseX - self:GetTrueX()
+            local dy = params.MouseY - self:GetTrueY()
             local lb, ub = bounds()
-            local percentX = localX / width
-
-            local posx = clamp(lb + (percentX * (ub - lb)), lb, ub)
+            local posx = clamp(lb + (progressFromPoint(dx, dy) * (ub - lb)), lb, ub)
             SCREENMAN:GetTopScreen():SetSongPosition(posx)
         end,
         MouseReleaseCommand = function(self)
@@ -797,81 +883,52 @@ local replaySlider = isReplay and
     } or
 	Def.Actor {}
 local p =
-	Def.ActorFrame {
-	Name = "FullProgressBar",
-	InitCommand = function(self)
-		self:xy(MovableValues.FullProgressBarX, MovableValues.FullProgressBarY)
-		self:zoomto(MovableValues.FullProgressBarWidth, MovableValues.FullProgressBarHeight)
-		if (allowedCustomization) then
-			Movable.DeviceButton_9.element = self
-			Movable.DeviceButton_0.element = self
-			Movable.DeviceButton_9.condition = enabledFullBar
-			Movable.DeviceButton_0.condition = enabledFullBar
+ 	Def.ActorFrame {
+ 	Name = "FullProgressBar",
+ 	InitCommand = function(self)
+		self:xy(MovableValues.DisplayPercentX + pieOffsetX, MovableValues.DisplayPercentY + pieOffsetY)
+ 		self:SetUpdateFunction(function(actor)
+ 			actor:xy(MovableValues.DisplayPercentX + pieOffsetX, MovableValues.DisplayPercentY + pieOffsetY)
+ 		end)
+ 	end,
+ 	replaySlider,
+	Def.ActorMultiVertex {
+		Name = "PieBackground",
+		InitCommand = function(self)
+			local verts = buildRingVerts(1, pieInnerRadius, pieOuterRadius, color("#666666"), pieSegments)
+			self:SetVertices(verts)
+			self:SetDrawState {Mode = "DrawMode_Quads", First = 1, Num = #verts}
+			self:diffusealpha(0.4)
 		end
-	end,
-	replaySlider,
+	},
 	Def.Quad {
 		InitCommand = function(self)
-			self:zoomto(width, height):diffuse(color("#666666")):diffusealpha(alpha)
+			self:zoomto((pieInnerRadius * 2) - 2, (pieInnerRadius * 2) - 2):diffuse(color("0,0,0,0.2"))
 		end
 	},
-	Def.SongMeterDisplay {
-		InitCommand = function(self)
-			self:SetUpdateRate(0.5)
-		end,
-		StreamWidth = width,
-		Stream = Def.Quad {
-			InitCommand = function(self)
-				self:zoomy(height):diffuse(getMainColor("highlight"))
-			end
-		}
-	},
-	LoadFont("Common Normal") ..
-		{
-			-- title
-			InitCommand = function(self)
-				self:zoom(0.35):maxwidth(width * 2)
-			end,
-			BeginCommand = function(self)
-				self:settext(GAMESTATE:GetCurrentSong():GetDisplayMainTitle())
-			end,
-			DoneLoadingNextSongMessageCommand = function(self)
-				self:settext(GAMESTATE:GetCurrentSong():GetDisplayMainTitle())
-			end,
-			PracticeModeReloadMessageCommand = function(self)
-				self:playcommand("Begin")
-			end
-		},
-	LoadFont("Common Normal") ..
-		{
-			-- total time
-			InitCommand = function(self)
-				self:x(width / 2):zoom(0.35):maxwidth(width * 2):halign(1)
-			end,
-			BeginCommand = function(self)
-				local ttime = GetPlayableTime()
-				settext(self, SecondsToMMSS(ttime))
-				diffuse(self, byMusicLength(ttime))
-			end,
-			DoneLoadingNextSongMessageCommand = function(self)
-				local ttime = GetPlayableTime()
-				settext(self, SecondsToMMSS(ttime))
-				diffuse(self, byMusicLength(ttime))
-			end,
-			--- ???? uhhh
-			CurrentRateChangedMessageCommand = function(self)
-				local ttime = GetPlayableTime()
-				settext(self, SecondsToMMSS(ttime))
-				diffuse(self, byMusicLength(ttime))
-			end,
-			PracticeModeReloadMessageCommand = function(self)
-				self:playcommand("CurrentRateChanged")
-			end
-		},
-	MovableBorder(width, height, 1, 0, 0)
-}
+ 	Def.ActorMultiVertex {
+ 		Name = "Pie",
+ 		InitCommand = function(self)
+			self:queuecommand("Set")
+ 			self:SetUpdateFunction(function(actor)
+ 				actor:queuecommand("Set")
+ 			end)
+ 		end,
+		SetCommand = function(self)
+			local verts = buildRingVerts(getSongProgress(), pieInnerRadius, pieOuterRadius, highlight, pieSegments)
+			self:SetVertices(verts)
+			self:SetDrawState {Mode = "DrawMode_Quads", First = 1, Num = #verts}
+		end
+ 	},
+ 	DoneLoadingNextSongMessageCommand = function(self)
+		self:GetChild("Pie"):queuecommand("Set")
+ 	end,
+ 	PracticeModeReloadMessageCommand = function(self)
+		self:GetChild("Pie"):queuecommand("Set")
+ 	end
+ }
 
-if enabledFullBar then
+if enabledFullBar or enabledMiniBar then
 	t[#t + 1] = p
 end
 
@@ -890,38 +947,11 @@ local mb =
 	Def.ActorFrame {
 	Name = "MiniProgressBar",
 	InitCommand = function(self)
-		self:xy(MovableValues.MiniProgressBarX, MovableValues.MiniProgressBarY)
-		if (allowedCustomization) then
-			Movable.DeviceButton_q.element = self
-			Movable.DeviceButton_q.condition = enabledMiniBar
-			Movable.DeviceButton_q.Border = self:GetChild("Border")
-		end
-	end,
-	Def.Quad {
-		InitCommand = function(self)
-			self:zoomto(width, height):diffuse(color("#666666")):diffusealpha(alpha)
-		end
-	},
-	Def.Quad {
-		InitCommand = function(self)
-			self:x(1 + width / 2):zoomto(1, height):diffuse(color("#555555"))
-		end
-	},
-	Def.SongMeterDisplay {
-		InitCommand = function(self)
-			self:SetUpdateRate(0.5)
-		end,
-		StreamWidth = width,
-		Stream = Def.Quad {
-			InitCommand = function(self)
-				self:zoomy(height):diffuse(getMainColor("highlight"))
-			end
-		}
-	},
-	MovableBorder(width, height, 1, 0, 0)
+		self:visible(false)
+	end
 }
 
-if enabledMiniBar then
+if false then
 	t[#t + 1] = mb
 end
 

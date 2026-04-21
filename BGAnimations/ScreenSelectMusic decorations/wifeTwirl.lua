@@ -548,6 +548,16 @@ local t = Def.ActorFrame {
 		end,
 		0.05)
 	end,
+	CurrentRateChangedMessageCommand = function(self)
+		if mintyFreshIntervalFunction ~= nil then
+			local topscr = SCREENMAN:GetTopScreen()
+			if topscr then
+				topscr:clearInterval(mintyFreshIntervalFunction)
+			end
+			mintyFreshIntervalFunction = nil
+		end
+		self:playcommand("MintyFresh")
+	end,
 }
 
 
@@ -555,9 +565,13 @@ local t = Def.ActorFrame {
 t[#t + 1] = Def.Actor {
 	MintyFreshCommand = function(self)
 		song = GAMESTATE:GetCurrentSong()
-		score = GetDisplayScore()
 		if song then
+			score = GetDisplayScore()
 			steps = GAMESTATE:GetCurrentSteps()
+		else
+			score = nil
+			steps = nil
+			ctags = {}
 		end
 	end,
 	CurrentSongChangedMessageCommand = function(self)
@@ -567,7 +581,7 @@ t[#t + 1] = Def.Actor {
 		self:queuecommand("MintyFresh")
 	end,
 	CurrentRateChangedMessageCommand = function(self)
-		self:queuecommand("MintyFresh")
+		self:playcommand("MintyFresh")
 	end
 }
 
@@ -604,7 +618,9 @@ t[#t + 1] = Def.ActorFrame {
 				self:xy(boxW/2, boxH/2):zoom(0.35):halign(0.5):valign(0.5):diffuse(color("#FFFFFF"))
 			end,
 			MintyFreshCommand = function(self)
-				if song and GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() == 4 then
+				if not song then
+					self:settext("--")
+				elseif GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() == 4 then
 					self:settext(getPrimarySkillsetLabel(steps))
 				else
 					self:settext("Uncategorised")
@@ -617,7 +633,9 @@ t[#t + 1] = Def.ActorFrame {
 				self:maxwidth((boxW - 8) / 0.20)
 			end,
 			MintyFreshCommand = function(self)
-				if steps and GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() == 4 then
+				if not song then
+					self:settext("--")
+				elseif steps and GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() == 4 then
 					self:settext(getMinaPatternBpmBreakdown(steps))
 				else
 					self:settext("")
@@ -631,7 +649,9 @@ t[#t + 1] = Def.ActorFrame {
 				self:xy(boxW + 5 + boxW/2, boxH/2 - 4):zoom(0.3):halign(0.5):valign(0.5)
 			end,
 			MintyFreshCommand = function(self)
-				if score then
+				if not song then
+					self:settext("--"):diffuse(color("#666666"))
+				elseif score then
 					self:settext(getClearTypeFromScore(PLAYER_1, score, 0))
 					self:diffuse(getClearTypeFromScore(PLAYER_1, score, 2))
 				else
@@ -644,7 +664,9 @@ t[#t + 1] = Def.ActorFrame {
 				self:xy(boxW + 5 + boxW/2, boxH - 8):zoom(0.25):halign(0.5):valign(0.5):diffuse(color("#BBBBBB"))
 			end,
 			MintyFreshCommand = function(self)
-				if score then
+				if not song then
+					self:settext("--")
+				elseif score then
 					self:settextf("(%.2fx) • %s", score:GetMusicRate(), getScoreDateRelative(score))
 				else
 					self:settext("")
@@ -658,7 +680,9 @@ t[#t + 1] = Def.ActorFrame {
 				self:xy((boxW*2) + 10 + boxW/2, boxH/2 - 4):zoom(0.3):halign(0.5):valign(0.5)
 			end,
 			MintyFreshCommand = function(self)
-				if score then
+				if not song then
+					self:settext("--"):diffuse(color("#666666"))
+				elseif score then
 					local perc = score:GetWifeScore() * 100
 					self:settextf("%.2f%% [%s]", perc, getJudgeLabel(score))
 					self:diffuse(byGrade(score:GetWifeGrade()))
@@ -672,7 +696,9 @@ t[#t + 1] = Def.ActorFrame {
 				self:xy((boxW*2) + 10 + boxW/2, boxH - 8):zoom(0.25):halign(0.5):valign(0.5):diffuse(color("#00FF00"))
 			end,
 			MintyFreshCommand = function(self)
-				if score then
+				if not song then
+					self:settext("--"):diffuse(color("#666666"))
+				elseif score then
 					self:settextf("(%.2fx) • %s", score:GetMusicRate(), getScoreDateRelative(score))
 					self:diffuse(color("#00FF00"))
 				else
@@ -698,7 +724,9 @@ t[#t + 1] = Def.ActorFrame {
 			self:xy(frameWidth, 40):zoom(0.3):halign(1):valign(0):diffuse(color("#FFFFFF"))
 		end,
 		MintyFreshCommand = function(self)
-			if score then
+			if not song then
+				self:settext("--")
+			elseif score then
 				self:settext("Last played " .. getScoreDateRelative(score))
 			else
 				self:settext("Never played")
@@ -712,7 +740,9 @@ t[#t + 1] = Def.ActorFrame {
 			self:xy(0, 52):zoom(0.27):halign(0):valign(0):diffuse(color("#DDDDDD"))
 		end,
 		MintyFreshCommand = function(self)
-			if steps then
+			if not song then
+				self:settext("--")
+			elseif steps then
 				local stype = steps:GetStepsType():gsub("StepsType_","")
 				local diff = ToEnumShortString(steps:GetDifficulty())
 				local meter = steps:GetMeter()
@@ -727,7 +757,9 @@ t[#t + 1] = Def.ActorFrame {
 			self:xy(frameWidth, 52):zoom(0.27):halign(1):valign(0):diffuse(color("#DDDDDD"))
 		end,
 		MintyFreshCommand = function(self)
-			if steps then
+			if not song then
+				self:settext("--")
+			elseif steps then
 				local stype = steps:GetStepsType():gsub("StepsType_","")
 				local notes = steps:GetRadarValues(PLAYER_1):GetValue("RadarCategory_Notes")
 				local holds = steps:GetRadarValues(PLAYER_1):GetValue("RadarCategory_Holds")
@@ -748,7 +780,9 @@ t[#t + 1] = Def.ActorFrame {
 				self:xy(0, icY):zoom(0.45):halign(0):valign(0.5)
 			end,
 			MintyFreshCommand = function(self)
-				if steps then
+				if not song then
+					self:settext("--"):diffuse(color("#666666"))
+				elseif steps then
 					local msd = steps:GetMSD(getCurRateValue(), 1)
 					self:settextf("%.2f", msd)
 					self:diffuse(byMSD(msd))
@@ -771,7 +805,9 @@ t[#t + 1] = Def.ActorFrame {
 				self:xy(frameWidth/2 - 15, icY):zoom(0.45):halign(0):valign(0.5):diffuse(color("#FFFFFF"))
 			end,
 			MintyFreshCommand = function(self)
-				if steps then
+				if not song then
+					self:settext("--")
+				elseif steps then
 					local bpmVals = steps:GetDisplayBpms()
 					if bpmVals and bpmVals[2] then
 						local bpm = bpmVals[2] * getCurRateValue()
@@ -798,7 +834,9 @@ t[#t + 1] = Def.ActorFrame {
 				self:xy(frameWidth - 40, icY):zoom(0.45):halign(0):valign(0.5):diffuse(color("#FFFFFF"))
 			end,
 			MintyFreshCommand = function(self)
-				if song then
+				if not song then
+					self:settext("--")
+				elseif song then
 					self:settext(SecondsToMSS(song:GetStepsSeconds() / getCurRateValue()))
 				else
 					self:settext("--:--")
@@ -1007,13 +1045,6 @@ local function adjustMusicRate(delta)
 	GAMESTATE:GetSongOptionsObject("ModsLevel_Song"):MusicRate(nextRate)
 	GAMESTATE:GetSongOptionsObject("ModsLevel_Current"):MusicRate(nextRate)
 	MESSAGEMAN:Broadcast("CurrentRateChanged")
-	local top = SCREENMAN:GetTopScreen()
-	if top and top.GetChild then
-		local twirler = top:GetChild("wifetwirler")
-		if twirler then
-			twirler:queuecommand("MintyFresh")
-		end
-	end
 end
 
 local function ihatestickinginputcallbackseverywhere(event)

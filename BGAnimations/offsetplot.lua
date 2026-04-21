@@ -4,14 +4,16 @@ local judges = {"marv", "perf", "great", "good", "boo", "miss"}
 local tst = ms.JudgeScalers
 local judge = GetTimingDifficulty()
 local tso = tst[judge]
+local loadingScreen = Var("LoadingScreen") or ""
+local useEvaluationLayout = loadingScreen == "ScreenEvaluation" or loadingScreen == "ScreenEvaluationNormal" or loadingScreen == "ScreenNetEvaluation"
 
-local plotWidth, plotHeight = 400, 120
-local plotX, plotY = SCREEN_WIDTH - 5 - plotWidth / 2, SCREEN_HEIGHT - 59.5 - plotHeight / 2
+local plotWidth, plotHeight = useEvaluationLayout and (SCREEN_WIDTH - 370) or 400, useEvaluationLayout and 130 or 120
+local plotX, plotY = useEvaluationLayout and (355 + plotWidth / 2) or (SCREEN_WIDTH - 5 - plotWidth / 2), useEvaluationLayout and (SCREEN_HEIGHT - 62 - plotHeight / 2) or (SCREEN_HEIGHT - 59.5 - plotHeight / 2)
 local dotDims, plotMargin = 2, 4
 local maxOffset = math.max(180, 180 * tso)
 local baralpha = 0.2
-local bgalpha = 0.8
-local textzoom = 0.35
+local bgalpha = useEvaluationLayout and 1 or 0.8
+local textzoom = useEvaluationLayout and 0.42 or 0.35
 local forcedWindow = false
 
 local translated_info = {
@@ -279,7 +281,7 @@ o[#o + 1] = Def.Quad {
 	Name = "BGQuad",
 	JudgeDisplayChangedMessageCommand = function(self)
 		self:zoomto(plotWidth + plotMargin, plotHeight + plotMargin)
-		self:diffuse(color("0.05,0.05,0.05,0.05"))
+		self:diffuse(color("0,0,0,1"))
 		self:diffusealpha(bgalpha)
 	end,
 	HighlightCommand = function(self)
@@ -330,6 +332,30 @@ o[#o + 1] = Def.Quad {
 			txt:visible(false)
 			bg:visible(false)
 		end
+	end
+}
+o[#o + 1] = Def.Quad {
+	Name = "BorderTop",
+	JudgeDisplayChangedMessageCommand = function(self)
+		self:xy(0, -plotHeight / 2 - plotMargin / 2):zoomto(plotWidth + plotMargin + 2, 2):diffuse(color("#FFFFFF"))
+	end
+}
+o[#o + 1] = Def.Quad {
+	Name = "BorderBottom",
+	JudgeDisplayChangedMessageCommand = function(self)
+		self:xy(0, plotHeight / 2 + plotMargin / 2):zoomto(plotWidth + plotMargin + 2, 2):diffuse(color("#FFFFFF"))
+	end
+}
+o[#o + 1] = Def.Quad {
+	Name = "BorderLeft",
+	JudgeDisplayChangedMessageCommand = function(self)
+		self:xy(-plotWidth / 2 - plotMargin / 2, 0):zoomto(2, plotHeight + plotMargin + 2):diffuse(color("#FFFFFF"))
+	end
+}
+o[#o + 1] = Def.Quad {
+	Name = "BorderRight",
+	JudgeDisplayChangedMessageCommand = function(self)
+		self:xy(plotWidth / 2 + plotMargin / 2, 0):zoomto(2, plotHeight + plotMargin + 2):diffuse(color("#FFFFFF"))
 	end
 }
 o[#o+1] = Def.ActorFrame {
