@@ -625,6 +625,8 @@ local t = Def.ActorFrame {
 	end,
 }
 
+local breakdown
+local primarySkill
 
 -- State update helper (crucial for InfoDisplayPanel)
 t[#t + 1] = Def.Actor {
@@ -633,9 +635,17 @@ t[#t + 1] = Def.Actor {
 		if song then
 			score = GetDisplayScore()
 			steps = GAMESTATE:GetCurrentSteps()
+
+			if GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() == 4 then 
+				breakdown = getMinaPatternBpmBreakdown(steps)
+				primarySkill = getPrimarySkillsetLabel(steps)
+			end 
+
 		else
 			score = nil
 			steps = nil
+			breakdown = nil 
+			primarySkill = nil 
 			ctags = {}
 		end
 	end,
@@ -679,32 +689,37 @@ t[#t + 1] = Def.ActorFrame {
 
 		-- Left Box: Skillset
 		f[#f+1] = LoadFont("Common Large") .. {
+			Name = "SkillsetStringMain",
 			InitCommand = function(self)
-				self:xy(boxW/2, boxH/2):zoom(0.35):halign(0.5):valign(0.5):diffuse(color("#FFFFFF"))
+				self:x(boxW/2):zoom(0.33):halign(0.5):valign(0.5):diffuse(color("#FFFFFF"))
 			end,
 			MintyFreshCommand = function(self)
-				if not song then
+				self:y((boxH/2) - 5)
+				if not song or not primarySkill then
 					self:settext("--")
-				elseif GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() == 4 then
-					self:settext(getPrimarySkillsetLabel(steps))
-				else
+					return 
+				end
+				self:settext(primarySkill)
+				
+				if GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() ~= 4 then
 					self:settext("Uncategorised")
+				elseif breakdown == "" then 
+					self:y(boxH/2)
 				end
 			end
 		}
 		f[#f+1] = LoadFont("Common Normal") .. {
 			InitCommand = function(self)
-				self:xy(boxW/2, boxH - 5):zoom(0.20):halign(0.5):valign(0.5):diffuse(color("#BBBBBB"))
+				self:xy(boxW/2, boxH - 5):zoom(0.25):halign(0.5):valign(0.5):diffuse(color("#BBBBBB"))
 				self:maxwidth((boxW - 8) / 0.20)
 			end,
 			MintyFreshCommand = function(self)
-				if not song then
-					self:settext("--")
-				elseif steps and GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() == 4 then
-					self:settext(getMinaPatternBpmBreakdown(steps))
-				else
+				if not song or not breakdown or GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() ~= 4 then
 					self:settext("")
+					return 
 				end
+
+				self:settext(breakdown)
 			end
 		}
 
@@ -726,7 +741,7 @@ t[#t + 1] = Def.ActorFrame {
 		}
 		f[#f+1] = LoadFont("Common Normal") .. {
 			InitCommand = function(self)
-				self:xy(boxW + 5 + boxW/2, boxH - 8):zoom(0.25):halign(0.5):valign(0.5):diffuse(color("#BBBBBB"))
+				self:xy(boxW + 5 + boxW/2, boxH - 5):zoom(0.25):halign(0.5):valign(0.5):diffuse(color("#BBBBBB"))
 			end,
 			MintyFreshCommand = function(self)
 				if not song then
@@ -758,7 +773,7 @@ t[#t + 1] = Def.ActorFrame {
 		}
 		f[#f+1] = LoadFont("Common Normal") .. {
 			InitCommand = function(self)
-				self:xy((boxW*2) + 10 + boxW/2, boxH - 8):zoom(0.25):halign(0.5):valign(0.5):diffuse(color("#00FF00"))
+				self:xy((boxW*2) + 10 + boxW/2, boxH - 5):zoom(0.25):halign(0.5):valign(0.5):diffuse(color("#00FF00"))
 			end,
 			MintyFreshCommand = function(self)
 				if not song then
@@ -802,7 +817,7 @@ t[#t + 1] = Def.ActorFrame {
 	-- ROW 3: Chart string (Left) & Radar string (Right)
 	LoadFont("Common Normal") .. {
 		InitCommand = function(self)
-			self:xy(0, 52):zoom(0.27):halign(0):valign(0):diffuse(color("#DDDDDD"))
+			self:xy(0, 56):zoom(0.27):halign(0):valign(0):diffuse(color("#DDDDDD"))
 		end,
 		MintyFreshCommand = function(self)
 			if not song then
@@ -819,7 +834,7 @@ t[#t + 1] = Def.ActorFrame {
 	},
 	LoadFont("Common Normal") .. {
 		InitCommand = function(self)
-			self:xy(frameWidth, 52):zoom(0.27):halign(1):valign(0):diffuse(color("#DDDDDD"))
+			self:xy(frameWidth, 58):zoom(0.27):halign(1):valign(0):diffuse(color("#DDDDDD"))
 		end,
 		MintyFreshCommand = function(self)
 			if not song then
@@ -1387,11 +1402,6 @@ t[#t + 1] = Def.ActorFrame {
 		end,
 		SetDynamicAccentColorMessageCommand = function(self, params)
 			self:diffuse(params.color):diffusealpha(0.9)
-		end,
-		MouseDownCommand = function(self, params)
-			if params.event == "DeviceButton_left mouse button" or params.event == "DeviceButton_right mouse button" then
-				return
-			end
 		end
 	},
 
