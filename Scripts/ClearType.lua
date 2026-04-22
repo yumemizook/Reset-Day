@@ -190,3 +190,9 @@ function getClearTypeFromScore(pn, score, ret)
 
 	return clearTypes(grade, playCount, perfcount, greatcount, misscount, ret) or typetable[12]
 end
+
+-- Judge-aware variant: accepts pre-computed rescored judgment counts
+-- so callers don't have to read raw stored values from the score object.
+function getClearTypeFromValues(grade, playCount, perfcount, greatcount, misscount, ret)
+	return clearTypes(grade, playCount or 1, perfcount or 0, greatcount or 0, misscount or 0, ret) or typetable[12]
+end

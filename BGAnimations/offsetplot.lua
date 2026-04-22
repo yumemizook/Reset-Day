@@ -52,6 +52,158 @@ local up = false
 local right = false
 local middle = false
 local usingCustomWindows = false
+local plotScore = SCOREMAN:GetMostRecentScore() or SCOREMAN:GetTempReplayScore()
+local evalGraphSettings = {
+	lineMode = "Combo",
+	lineColor = "Clear Type",
+	lineOnTop = true,
+	columnFilter = {},
+	scale = 100,
+	showTimingWindows = true,
+	hoverInfo = "Cumulative",
+	sliceWidth = 4,
+}
+
+local function copyTable(inTable)
+	local out = {}
+	for k, v in pairs(inTable or {}) do
+		if type(v) == "table" then
+			out[k] = copyTable(v)
+		else
+			out[k] = v
+		end
+	end
+	return out
+end
+
+local function mergeEvalGraphSettings(source)
+	if type(source) ~= "table" then return end
+	for k, v in pairs(source) do
+		if type(v) == "table" then
+			evalGraphSettings[k] = copyTable(v)
+		else
+			evalGraphSettings[k] = v
+		end
+	end
+end
+
+local function refreshEvalGraphSettings()
+	mergeEvalGraphSettings(_G.ResetDayEvalGraphSettings or {})
+	if evalGraphSettings.lineMode == "Standard deviation" then
+		evalGraphSettings.lineMode = "SD"
+	end
+	if evalGraphSettings.lineColor == "Lamp" then
+		evalGraphSettings.lineColor = "Clear Type"
+	end
+	evalGraphSettings.onlyShowReleases = nil
+	local columns = GAMESTATE:GetCurrentStyle() and GAMESTATE:GetCurrentStyle():ColumnsPerPlayer() or 4
+	for i = 1, columns do
+		if evalGraphSettings.columnFilter[i] == nil then
+			evalGraphSettings.columnFilter[i] = true
+		end
+	end
+	maxOffset = math.max(180, 180 * tso) * math.max(0.05, (evalGraphSettings.scale or 100) / 100)
+end
+
+local function shouldDrawPoint(index)
+	if ntt[index] == "TapNoteType_Mine" then return false end
+	if ctt[index] ~= nil and evalGraphSettings.columnFilter[ctt[index] + 1] == false then return false end
+	return true
+end
+
+local function lineToYNormalized(value, low, high)
+	if high <= low then return 0 end
+	local normalized = clamp((value - low) / (high - low), 0, 1)
+	return (plotHeight / 2) - (normalized * plotHeight)
+end
+
+local function tableColor(c)
+	local out = {1, 1, 1, 1}
+	if type(c) == "table" then
+		out[1] = c[1] or out[1]
+		out[2] = c[2] or out[2]
+		out[3] = c[3] or out[3]
+		out[4] = c[4] or out[4]
+	end
+	return out
+end
+
+local function getJudgeBucketForOffset(offset)
+	local scale = tst[judge]
+	if usingCustomWindows then
+		local window = getCurrentCustomWindowConfigJudgmentWindowTable()
+		if math.abs(offset) <= window.TapNoteScore_W1 then return 1 end
+		if math.abs(offset) <= window.TapNoteScore_W2 then return 2 end
+		if math.abs(offset) <= window.TapNoteScore_W3 then return 3 end
+		if math.abs(offset) <= window.TapNoteScore_W4 then return 4 end
+		if math.abs(offset) <= window.TapNoteScore_W5 then return 5 end
+		return 6
+	end
+	if math.abs(offset) <= 22.5 * scale then return 1 end
+	if math.abs(offset) <= 45 * scale then return 2 end
+	if math.abs(offset) <= 90 * scale then return 3 end
+	if math.abs(offset) <= 135 * scale then return 4 end
+	if math.abs(offset) <= 180 * scale then return 5 end
+	return 6
+end
+
+local function getLineColorAtState(running)
+	if evalGraphSettings.lineColor == "White" then
+		return {1, 1, 1, 1}
+	end
+	if evalGraphSettings.lineColor == "Grade" then
+		local total = running.count
+		local percent = total > 0 and ((running.w1 + running.w2 * 0.8 + running.w3 * 0.5) / total) or 0
+		return tableColor(getGradeColor(GetGradeFromPercent(percent)))
+	end
+	local grade = GetGradeFromPercent(math.max(0, math.min(1, (running.w1 + running.w2 * 0.8 + running.w3 * 0.5) / math.max(1, running.count))))
+	local misscount = math.max(0, running.count - running.w1 - running.w2 - running.w3)
+	return tableColor(getClearTypeFromValues(grade, 1, running.w2, running.w3, misscount, 2))
+end
+
+local function getSliceSummary(row, width)
+	local halfWidth = math.max(1, width or 1) * 48
+	local minRow = row - halfWidth
+	local maxRow = row + halfWidth
+	local judgments = {W1 = 0, W2 = 0, W3 = 0, W4 = 0, W5 = 0, Miss = 0}
+	local total = 0
+	local sum = 0
+	local sumSquares = 0
+	for i = 1, #nrt do
+		if nrt[i] and nrt[i] >= minRow and nrt[i] <= maxRow and shouldDrawPoint(i) then
+			total = total + 1
+			local offset = dvt[i] or 0
+			sum = sum + offset
+			sumSquares = sumSquares + (offset * offset)
+			local judgeBucket = getJudgeBucketForOffset(offset)
+			if judgeBucket == 1 then judgments.W1 = judgments.W1 + 1
+			elseif judgeBucket == 2 then judgments.W2 = judgments.W2 + 1
+			elseif judgeBucket == 3 then judgments.W3 = judgments.W3 + 1
+			elseif judgeBucket == 4 then judgments.W4 = judgments.W4 + 1
+			elseif judgeBucket == 5 then judgments.W5 = judgments.W5 + 1
+			else judgments.Miss = judgments.Miss + 1 end
+		end
+	end
+	local mean = total > 0 and (sum / total) or 0
+	local variance = total > 0 and math.max(0, (sumSquares / total) - (mean * mean)) or 0
+	local sd = math.sqrt(variance)
+	local accuracy = total > 0 and ((judgments.W1 + judgments.W2 * 0.8 + judgments.W3 * 0.5) / total) * 100 or 0
+	return {
+		judgments = judgments,
+		mean = mean,
+		sd = sd,
+		accuracy = accuracy,
+		total = total,
+		minRow = minRow,
+		maxRow = maxRow,
+	}
+end
+
+local function rowToX(row)
+	if finalSecond == 0 then return 0 end
+	local elapsed = td:GetElapsedTimeFromNoteRow(row)
+	return elapsed / finalSecond * plotWidth - plotWidth / 2
+end
 
 local function fitX(x) -- Scale time values to fit within plot width.
 	if finalSecond == 0 then
@@ -107,6 +259,7 @@ end
 local o = Def.ActorFrame {
 	Name = "OffsetPlot",
 	OnCommand = function(self)
+		refreshEvalGraphSettings()
 		self:xy(plotX, plotY)
 		-- being explicit about the logic since atm these are the only 2 cases we handle
 		local name = SCREENMAN:GetTopScreen():GetName()
@@ -128,6 +281,7 @@ local o = Def.ActorFrame {
 		else -- should be default behavior
 			if name == "ScreenScoreTabOffsetPlot" then
 				local score = getScoreForPlot()
+				plotScore = score
 				plotWidth, plotHeight = SCREEN_WIDTH, SCREEN_WIDTH * 0.3
 				self:xy(SCREEN_CENTER_X, SCREEN_CENTER_Y)
 				textzoom = 0.5
@@ -174,6 +328,7 @@ local o = Def.ActorFrame {
 	SetFromScoreCommand = function(self, params)
 		if params.score then
 			local score = params.score
+			plotScore = score
 
 			if score:HasReplayData() then
 				local replay = score:GetReplay()
@@ -193,6 +348,7 @@ local o = Def.ActorFrame {
 				wuab[i] = td:GetElapsedTimeFromNoteRow(nrt[i])
 			end
 
+			refreshEvalGraphSettings()
 			MESSAGEMAN:Broadcast("JudgeDisplayChanged")
 		end
 	end,
@@ -208,10 +364,18 @@ local o = Def.ActorFrame {
 			wuab [i] = td:GetElapsedTimeFromNoteRow(nrt[i])
 		end
 
+		refreshEvalGraphSettings()
 		MESSAGEMAN:Broadcast("JudgeDisplayChanged")
 	end,
 	UnloadedCustomWindowMessageCommand = function(self)
 		usingCustomWindows = false
+		refreshEvalGraphSettings()
+		MESSAGEMAN:Broadcast("JudgeDisplayChanged")
+	end,
+	EvalGraphSettingsChangedMessageCommand = function(self, params)
+		mergeEvalGraphSettings(params and params.settings or nil)
+		refreshEvalGraphSettings()
+		MESSAGEMAN:Broadcast("JudgeDisplayChanged")
 	end,
 	CodeMessageCommand = function(self, params)
 		if usingCustomWindows then return end
@@ -250,21 +414,21 @@ local o = Def.ActorFrame {
 			tso = tst[GetTimingDifficulty()]
 		end
 		if params.Name ~= "ResetJudge" and params.Name ~= "PrevJudge" and params.Name ~= "NextJudge" and params.Name ~= "ToggleHands" then return end
-		maxOffset = math.max(180, 180 * tso)
+		refreshEvalGraphSettings()
 		MESSAGEMAN:Broadcast("JudgeDisplayChanged")
 	end,
 	ForceWindowMessageCommand = function(self, params)
 		judge = params.judge
 		clampJudge()
 		tso = tst[judge]
-		maxOffset = math.max(180, 180 * tso)
+		refreshEvalGraphSettings()
 		forcedWindow = true
 	end,
 	UpdateNetEvalStatsMessageCommand = function(self) -- i haven't updated or tested neteval during last round of work -mina
 		local s = SCREENMAN:GetTopScreen():GetHighScore()
 		if s then
-			score = s
-			local replay = score:GetReplay()
+			plotScore = s
+			local replay = plotScore:GetReplay()
 			dvt = replay:GetOffsetVector()
 			nrt = replay:GetNoteRowVector()
 			ctt = replay:GetTrackVector()
@@ -273,6 +437,7 @@ local o = Def.ActorFrame {
 				wuab[i] = td:GetElapsedTimeFromNoteRow(nrt[i])
 			end
 		end
+		refreshEvalGraphSettings()
 		MESSAGEMAN:Broadcast("JudgeDisplayChanged")
 	end
 }
@@ -293,40 +458,53 @@ o[#o + 1] = Def.Quad {
 			bar:visible(true)
 			txt:visible(true)
 			bg:visible(true)
-			bar:x(xpos)
 			txt:x(xpos - 2)
-			bg:x(xpos)
-			bg:zoomto(txt:GetZoomedWidth() + 4, txt:GetZoomedHeight() + 4)
 			local row = convertXToRow(xpos)
-			local replay = REPLAYS:GetActiveReplay()
-			local snapshot = replay:GetReplaySnapshotForNoterow(row)
-			local judgments = snapshot:GetJudgments()
-			local wifescore = snapshot:GetWifePercent() * 100
-			local mean = snapshot:GetMean()
-			local sd = snapshot:GetStandardDeviation()
 			local timebro = td:GetElapsedTimeFromNoteRow(row) / getCurRateValue()
-
-			local marvCount = judgments["W1"]
-			local perfCount = judgments["W2"]
-			local greatCount = judgments["W3"]
-			local goodCount = judgments["W4"]
-			local badCount = judgments["W5"]
-			local missCount = judgments["Miss"]
-
-			--txt:settextf("x %f\nrow %f\nbeat %f\nfinalsecond %f", xpos, row, row/48, finalSecond)
-			-- The odd formatting here is in case we want to add translation support.
-			txt:settextf("%f%%\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %0.2fms\n%s: %0.2fms\n%s: %0.2fs",
-				wifescore,
-				translated_info["TapNoteScore_W1"], marvCount,
-				translated_info["TapNoteScore_W2"], perfCount,
-				translated_info["TapNoteScore_W3"], greatCount,
-				translated_info["TapNoteScore_W4"], goodCount,
-				translated_info["TapNoteScore_W5"], badCount,
-				translated_info["TapNoteScore_Miss"], missCount,
-				translated_info["SD"], sd,
-				translated_info["Mean"], mean,
-				"Time", timebro
-			)
+			if evalGraphSettings.hoverInfo == "Slice" then
+				local slice = getSliceSummary(row, evalGraphSettings.sliceWidth)
+				local minX = rowToX(slice.minRow)
+				local maxX = rowToX(slice.maxRow)
+				local sliceWidth = math.max(2, math.abs(maxX - minX))
+				bar:x((minX + maxX) / 2)
+				bar:zoomto(sliceWidth, plotHeight + plotMargin)
+				txt:settextf("Slice (%d)\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %0.2fms\n%s: %0.2fms\nAccuracy: %0.2f%%\n%s: %0.2fs",
+					slice.total,
+					translated_info["TapNoteScore_W1"], slice.judgments["W1"],
+					translated_info["TapNoteScore_W2"], slice.judgments["W2"],
+					translated_info["TapNoteScore_W3"], slice.judgments["W3"],
+					translated_info["TapNoteScore_W4"], slice.judgments["W4"],
+					translated_info["TapNoteScore_W5"], slice.judgments["W5"],
+					translated_info["TapNoteScore_Miss"], slice.judgments["Miss"],
+					translated_info["SD"], slice.sd,
+					translated_info["Mean"], slice.mean,
+					slice.accuracy,
+					"Time", timebro
+				)
+			else
+				bar:x(xpos)
+				bar:zoomto(2, plotHeight + plotMargin)
+				local replay = REPLAYS:GetActiveReplay()
+				local snapshot = replay and replay:GetReplaySnapshotForNoterow(row)
+				local judgments = snapshot and snapshot:GetJudgments() or {W1 = 0, W2 = 0, W3 = 0, W4 = 0, W5 = 0, Miss = 0}
+				local wifescore = snapshot and (snapshot:GetWifePercent() * 100) or 0
+				local mean = snapshot and snapshot:GetMean() or 0
+				local sd = snapshot and snapshot:GetStandardDeviation() or 0
+				txt:settextf("%0.2f%%\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %d\n%s: %0.2fms\n%s: %0.2fms\n%s: %0.2fs",
+					wifescore,
+					translated_info["TapNoteScore_W1"], judgments["W1"],
+					translated_info["TapNoteScore_W2"], judgments["W2"],
+					translated_info["TapNoteScore_W3"], judgments["W3"],
+					translated_info["TapNoteScore_W4"], judgments["W4"],
+					translated_info["TapNoteScore_W5"], judgments["W5"],
+					translated_info["TapNoteScore_Miss"], judgments["Miss"],
+					translated_info["SD"], sd,
+					translated_info["Mean"], mean,
+					"Time", timebro
+				)
+			end
+			bg:x(bar:GetX())
+			bg:zoomto(txt:GetZoomedWidth() + 4, txt:GetZoomedHeight() + 4)
 		else
 			bar:visible(false)
 			txt:visible(false)
@@ -394,6 +572,7 @@ local santabarf = {"TapNoteScore_W1", "TapNoteScore_W2", "TapNoteScore_W3", "Tap
 for i = 1, #fantabars do
 	o[#o + 1] = Def.Quad {
 		JudgeDisplayChangedMessageCommand = function(self)
+			self:visible(evalGraphSettings.showTimingWindows)
 			self:zoomto(plotWidth + plotMargin, 1):diffuse(byJudgment(bantafars[i])):diffusealpha(baralpha)
 			local fit = tso * fantabars[i]
 			if usingCustomWindows then
@@ -406,6 +585,7 @@ for i = 1, #fantabars do
 	}
 	o[#o + 1] = Def.Quad {
 		JudgeDisplayChangedMessageCommand = function(self)
+			self:visible(evalGraphSettings.showTimingWindows)
 			self:zoomto(plotWidth + plotMargin, 1):diffuse(byJudgment(bantafars[i])):diffusealpha(baralpha)
 			local fit = tso * fantabars[i]
 			if usingCustomWindows then
@@ -414,8 +594,8 @@ for i = 1, #fantabars do
 			self:finishtweening()
 			self:smooth(0.1)
 			self:y(fitY(-fit))
-		end
-	}
+		 end
+}
 end
 
 -- Bar for current mouse position on graph
@@ -441,38 +621,34 @@ o[#o + 1] = Def.ActorMultiVertex {
 	JudgeDisplayChangedMessageCommand = function(self)
 		local verts = {}
 		for i = 1, #dvt do
-			local x = fitX(wuab[i])
-			local y = fitY(dvt[i])
-			local fit = math.max(183, 183 * tso)
+			if shouldDrawPoint(i) then
+				local x = fitX(wuab[i])
+				local y = fitY(dvt[i])
+				local fit = math.max(183, 183 * tso)
 
-			-- get the color for the tap
-			local cullur = offsetToJudgeColor(dvt[i], tst[judge])
-			if usingCustomWindows then
-				cullur = customOffsetToJudgeColor(dvt[i], getCurrentCustomWindowConfigJudgmentWindowTable())
-			end
-			cullur[4] = 1
-			local cullurFaded = {}
-
-			if math.abs(y) > plotHeight / 2 then
-				y = fitY(fit)
-			end
-
-			-- if fading by hands, get the faded color
-			if handspecific then
-				-- make a copy of the color to get the faded color
-				for ind,c in pairs(cullur) do
-					cullurFaded[ind] = c
+				local cullur = offsetToJudgeColor(dvt[i], tst[judge])
+				if usingCustomWindows then
+					cullur = customOffsetToJudgeColor(dvt[i], getCurrentCustomWindowConfigJudgmentWindowTable())
 				end
-				cullurFaded[4] = 0.28 -- hex 48 is approximately this
-			end
+				cullur[4] = 1
+				local cullurFaded = {}
 
-			-- remember that time i removed redundancy in this code 2 days ago and then did this -mina
-			if ntt[i] ~= "TapNoteType_Mine" then
+				if math.abs(y) > plotHeight / 2 then
+					y = fitY(fit)
+				end
+
+				if handspecific then
+					for ind, c in pairs(cullur) do
+						cullurFaded[ind] = c
+					end
+					cullurFaded[4] = 0.28
+				end
+
 				if handspecific and left then
 					if ctt[i] == 0 then
 						setOffsetVerts(verts, x, y, cullur)
 					else
-						setOffsetVerts(verts, x, y, cullurFaded) -- highlight left
+						setOffsetVerts(verts, x, y, cullurFaded)
 					end
 				elseif handspecific and down then
 					if ctt[i] == 1 then
@@ -490,7 +666,7 @@ o[#o + 1] = Def.ActorMultiVertex {
 					if ctt[i] == 3 then
 						setOffsetVerts(verts, x, y, cullur)
 					else
-						setOffsetVerts(verts, x, y, cullurFaded) -- highlight right
+						setOffsetVerts(verts, x, y, cullurFaded)
 					end
 				else
 					setOffsetVerts(verts, x, y, cullur)
@@ -501,6 +677,73 @@ o[#o + 1] = Def.ActorMultiVertex {
 		self:SetDrawState {Mode = "DrawMode_Quads", First = 1, Num = #verts}
 	end
 }
+
+local function getLineModeValue(index, running)
+	local bucket = getJudgeBucketForOffset(dvt[index] or 0)
+	running.count = running.count + 1
+	running.sumOffset = running.sumOffset + (dvt[index] or 0)
+	running.sumSquares = running.sumSquares + ((dvt[index] or 0) * (dvt[index] or 0))
+	if bucket == 1 then running.w1 = running.w1 + 1 end
+	if bucket == 2 then running.w2 = running.w2 + 1 end
+	if bucket == 3 then running.w3 = running.w3 + 1 end
+	if bucket <= 2 then running.combo = running.combo + 1 else running.combo = 0 end
+	if evalGraphSettings.lineMode == "Combo" then return running.combo end
+	if evalGraphSettings.lineMode == "Mean" then return running.sumOffset / math.max(1, running.count) end
+	if evalGraphSettings.lineMode == "SD" or evalGraphSettings.lineMode == "Standard deviation" then
+		local mean = running.sumOffset / math.max(1, running.count)
+		return math.sqrt(math.max(0, (running.sumSquares / math.max(1, running.count)) - (mean * mean)))
+	end
+	if evalGraphSettings.lineMode == "Accuracy" then return ((running.w1 + running.w2 * 0.8 + running.w3 * 0.5) / math.max(1, running.count)) * 100 end
+	if evalGraphSettings.lineMode == "MA" then return running.w2 == 0 and running.w1 or (running.w1 / running.w2) end
+	if evalGraphSettings.lineMode == "PA" then return running.w3 == 0 and running.w2 or (running.w2 / running.w3) end
+	return nil
+end
+
+local function buildLineVertices()
+	if evalGraphSettings.lineMode == "None" then return {} end
+	local running = {count = 0, combo = 0, sumOffset = 0, sumSquares = 0, w1 = 0, w2 = 0, w3 = 0}
+	local points = {}
+	local minValue, maxValue = nil, nil
+	for i = 1, #dvt do
+		if shouldDrawPoint(i) then
+			local value = getLineModeValue(i, running)
+			if value ~= nil then
+				points[#points + 1] = {x = fitX(wuab[i]), raw = value, color = getLineColorAtState(running)}
+				minValue = minValue and math.min(minValue, value) or value
+				maxValue = maxValue and math.max(maxValue, value) or value
+			end
+		end
+	end
+	if #points == 0 then return {} end
+	if evalGraphSettings.lineMode == "Mean" then
+		minValue = -maxOffset
+		maxValue = maxOffset
+	end
+	if minValue == maxValue then
+		minValue = minValue - 1
+		maxValue = maxValue + 1
+		end
+	local verts = {}
+	for i = 1, #points do
+		local y = evalGraphSettings.lineMode == "Mean" and fitY(points[i].raw) or lineToYNormalized(points[i].raw, minValue, maxValue)
+		verts[#verts + 1] = {{points[i].x, y, 0}, points[i].color or {1, 1, 1, 1}}
+	end
+	return verts
+end
+
+o[#o + 1] = Def.ActorMultiVertex {
+	Name = "TrendLine",
+	JudgeDisplayChangedMessageCommand = function(self)
+		local verts = buildLineVertices()
+		self:SetVertices(verts)
+		self:SetDrawState {Mode = "DrawMode_LineStrip", First = 1, Num = #verts}
+		self:draworder(evalGraphSettings.lineOnTop and 105 or 5)
+	end,
+	InitCommand = function(self)
+		self:visible(true)
+	end
+}
+
 
 -- filter
 o[#o + 1] = LoadFont("Common Normal") .. {

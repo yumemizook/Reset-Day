@@ -191,6 +191,9 @@ local function getDisplayedWifePercentText()
 end
 
 local function getDisplayedJudgeLabel()
+	if usingCustomWindows then
+		return getCurrentCustomWindowConfigName()
+	end
 	local js = judge ~= 9 and judge or "ustice"
 	return "Wife3 J" .. js
 end
@@ -559,19 +562,13 @@ local function scoreBoard(pn, position)
 				self:diffusealpha(0)
 			end,
 		},
-		Def.ActorFrame {
-			Name = "CustomScoringDisplay",
-			InitCommand = function(self)
-				self:xy(frameX - 5, frameY - 10)
-				self:visible(usingCustomWindows)
-			end,
+		-- Hidden logic handler for custom windows
+		Def.Actor {
+			Name = "CustomWindowLogicHandler",
 			ToggleCustomWindowsMessageCommand = function(self)
 				if inMulti then return end
 				usingCustomWindows = not usingCustomWindows
 
-				self:visible(usingCustomWindows)
-				self:GetParent():GetChild("GraphDisplayP1"):visible(not usingCustomWindows)
-				self:GetParent():GetChild("ComboGraphP1"):visible(not usingCustomWindows)
 				if not usingCustomWindows then
 					unloadCustomWindowConfig()
 					MESSAGEMAN:Broadcast("UnloadedCustomWindow")
@@ -583,7 +580,7 @@ local function scoreBoard(pn, position)
 					loadCurrentCustomWindowConfig()
 					MESSAGEMAN:Broadcast("RecalculateGraphs", {judge=judge})
 					lastSnapshot = REPLAYS:GetActiveReplay():GetLastReplaySnapshot()
-					self:playcommand("Set")
+					self:GetParent():playcommand("Set")
 					MESSAGEMAN:Broadcast("LoadedCustomWindow")
 				end
 			end,
@@ -596,7 +593,7 @@ local function scoreBoard(pn, position)
 				loadCurrentCustomWindowConfig()
 				MESSAGEMAN:Broadcast("RecalculateGraphs", {judge=judge})
 				lastSnapshot = REPLAYS:GetActiveReplay():GetLastReplaySnapshot()
-				self:playcommand("Set")
+				self:GetParent():playcommand("Set")
 				MESSAGEMAN:Broadcast("LoadedCustomWindow")
 			end,
 			CodeMessageCommand = function(self, params)
@@ -611,64 +608,6 @@ local function scoreBoard(pn, position)
 					MESSAGEMAN:Broadcast("MoveCustomWindowIndex", {direction=1})
 				end
 			end,
-
-			UIElements.QuadButton(1, 1) .. {
-				Name = "BG",
-				InitCommand = function(self)
-					self:zoomto(capWideScale(get43size(235),235), 25)
-					self:halign(0):valign(1)
-					self:diffuse(getMainColor("tabs"))
-				end,
-				MouseClickCommand = function(self, params)
-					if self:IsVisible() and usingCustomWindows then
-						if params.event ~= "DeviceButton_left mouse button" then
-							moveCustomWindowConfigIndex(1)
-						else
-							moveCustomWindowConfigIndex(-1)
-						end
-						loadCurrentCustomWindowConfig()
-						MESSAGEMAN:Broadcast("RecalculateGraphs", {judge=judge})
-						lastSnapshot = REPLAYS:GetActiveReplay():GetLastReplaySnapshot()
-						self:GetParent():playcommand("Set")
-						MESSAGEMAN:Broadcast("LoadedCustomWindow")
-					end
-				end,
-			},
-			Def.Quad {
-				Name = "SmallHorizontalLine",
-				InitCommand = function(self)
-					self:xy(0, 0)
-					self:zoomto(capWideScale(get43size(235),235), 2)
-					self:halign(0)
-					self:diffuse(getMainColor("highlight"))
-					self:diffusealpha(0.5)
-				end,
-			},
-			LoadFont("Common Large") .. {
-				Name = "CustomPercent",
-				InitCommand = function(self)
-					self:xy(8, -4)
-					self:zoom(0.45)
-					self:halign(0):valign(1)
-					self:maxwidth(capWideScale(320, 500))
-				end,
-				SetCommand = function(self)
-					self:diffuse(getGradeColor(score:GetWifeGrade()))
-					-- 2 billion should be the last noterow always. just interested in the final score.
-					local wife = lastSnapshot:GetWifePercent() * 100
-					if wife > 99 then
-						self:settextf(
-							"%05.4f%% (%s)",
-							notShit.floor(wife, 4), getCurrentCustomWindowConfigName()
-						)
-					else
-						self:settextf(
-							"%05.2f%% (%s)",
-							notShit.floor(wife, 2), getCurrentCustomWindowConfigName()
-						)
-					end
-				end,
-			},
 		},
 		LoadFont("Common Large") .. {
 			Name = "MSDDisplay",
@@ -755,12 +694,6 @@ local function scoreBoard(pn, position)
 						self:GetParent():GetChild("LongerText"):visible(false)
 					end
 				end,
-				MouseClickCommand = function(self)
-					if inMulti then return end
-					if self:IsVisible() then
-						MESSAGEMAN:Broadcast("ToggleCustomWindows")
-					end
-				end,
 			},
 			LoadFont("Common Large") .. {
 				Name = "NormalText",
@@ -781,34 +714,26 @@ local function scoreBoard(pn, position)
 				ScoreChangedMessageCommand = function(self)
 					self:queuecommand("Set")
 				end,
+				LoadedCustomWindowMessageCommand = function(self)
+					self:queuecommand("Set")
+				end,
+				UnloadedCustomWindowMessageCommand = function(self)
+					self:queuecommand("Set")
+				end,
 				CodeMessageCommand = function(self, params)
 					if usingCustomWindows then
 						return
 					end
 
-					local rescoretable = getRescoreElements(score)
-					local rescorepercent = 0
-					local ws = "Wife3" .. " J"
 					if params.Name == "PrevJudge" and judge > 4 then
 						judge = judge - 1
 						clampJudge()
-						rescorepercent = getRescoredWife3Judge(3, judge, rescoretable)
-						local pct = notShit.floor(rescorepercent, 2)
-						self:diffuse(getGradeColor(GetGradeFromPercent(pct/100)))
-						self:settextf(
-							"%05.2f%% (%s)", pct, ws .. judge
-						)
+						self:playcommand("Set")
 						MESSAGEMAN:Broadcast("RecalculateGraphs", {judge = judge})
 					elseif params.Name == "NextJudge" and judge < 9 then
 						judge = judge + 1
 						clampJudge()
-						rescorepercent = getRescoredWife3Judge(3, judge, rescoretable)
-						local js = judge ~= 9 and judge or "ustice"
-						local pct = notShit.floor(rescorepercent, 2)
-						self:diffuse(getGradeColor(GetGradeFromPercent(pct/100)))
-						self:settextf(
-							"%05.2f%% (%s)", pct, ws .. js
-						)
+						self:playcommand("Set")
 						MESSAGEMAN:Broadcast("RecalculateGraphs", {judge = judge})
 					end
 					if params.Name == "ResetJudge" then
@@ -838,32 +763,23 @@ local function scoreBoard(pn, position)
 				ScoreChangedMessageCommand = function(self)
 					self:queuecommand("Set")
 				end,
+				LoadedCustomWindowMessageCommand = function(self)
+					self:queuecommand("Set")
+				end,
+				UnloadedCustomWindowMessageCommand = function(self)
+					self:queuecommand("Set")
+				end,
 				CodeMessageCommand = function(self, params)
 					if usingCustomWindows then
 						return
 					end
 
-					local rescoretable = getRescoreElements(score)
-					local rescorepercent = 0
-					local wv = score:GetWifeVers()
-					local ws = "Wife3" .. " J"
 					if params.Name == "PrevJudge" and judge2 > 4 then
 						judge2 = judge2 - 1
-						rescorepercent = getRescoredWife3Judge(3, judge2, rescoretable)
-						local pct = notShit.floor(rescorepercent, 4)
-						self:diffuse(getGradeColor(GetGradeFromPercent(pct/100)))
-						self:settextf(
-							"%05.4f%% (%s)", pct, ws .. judge2
-						)
+						self:playcommand("Set")
 					elseif params.Name == "NextJudge" and judge2 < 9 then
 						judge2 = judge2 + 1
-						rescorepercent = getRescoredWife3Judge(3, judge2, rescoretable)
-						local js = judge2 ~= 9 and judge2 or "ustice"
-						local pct = notShit.floor(rescorepercent, 4)
-						self:diffuse(getGradeColor(GetGradeFromPercent(pct/100)))
-						self:settextf(
-							"%05.4f%% (%s)", pct, ws .. js
-						)
+						self:playcommand("Set")
 					end
 					if params.Name == "ResetJudge" then
 						judge2 = GetTimingDifficulty()
@@ -958,21 +874,21 @@ local function scoreBoard(pn, position)
 			Def.Quad {
 				Name = "BG",
 				InitCommand = function(self)
-					self:xy(frameX, frameY + 70 + ((judgmentIndex - 1) * 24))
+					self:xy(frameX, frameY + 90 + ((judgmentIndex - 1) * 24))
 					self:zoomto(frameWidth, 24)
 					self:halign(0)
 					self:diffuse(byJudgment(judgmentName))
-					self:diffusealpha(0.8)
+					self:diffusealpha(0.3)
 				end,
 			},
 			Def.Quad {
 				Name = "Fill",
 				InitCommand = function(self)
-					self:xy(frameX, frameY + 70 + ((judgmentIndex - 1) * 24))
+					self:xy(frameX, frameY + 90 + ((judgmentIndex - 1) * 24))
 					self:zoomto(frameWidth, 24)
 					self:halign(0)
 					self:diffuse(byJudgment(judgmentName))
-					self:diffusealpha(0.4)
+					self:diffusealpha(0.9)
 				end,
 				BeginCommand = function(self)
 					self:glowshift()
@@ -994,7 +910,7 @@ local function scoreBoard(pn, position)
 			LoadFont("Common Large") .. {
 				Name = "Name",
 				InitCommand = function(self)
-					self:xy(frameX + 8, frameY + 70 + ((judgmentIndex - 1) * 24) + 12)
+					self:xy(frameX + 8, frameY + 90 + ((judgmentIndex - 1) * 24))
 					self:zoom(0.32)
 					self:halign(0):valign(0.5)
 				end,
@@ -1015,7 +931,7 @@ local function scoreBoard(pn, position)
 			LoadFont("Common Large") .. {
 				Name = "Count",
 				InitCommand = function(self)
-					self:xy(frameX + frameWidth - 48, frameY + 70 + ((judgmentIndex - 1) * 24) + 12)
+					self:xy(frameX + frameWidth - 48, frameY + 90 + ((judgmentIndex - 1) * 24))
 					self:zoom(0.32)
 					self:halign(1):valign(0.5)
 					self:visible(false)
@@ -1031,7 +947,7 @@ local function scoreBoard(pn, position)
 			LoadFont("Common Normal") .. {
 				Name = "Percentage",
 				InitCommand = function(self)
-					self:xy(frameX + frameWidth - 8, frameY + 70 + ((judgmentIndex - 1) * 24) + 12)
+					self:xy(frameX + frameWidth - 8, frameY + 90 + ((judgmentIndex - 1) * 24))
 					self:zoom(0.32)
 					self:halign(1):valign(0.5)
 				end,
