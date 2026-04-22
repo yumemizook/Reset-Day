@@ -2526,6 +2526,19 @@ local t = Def.ActorFrame {
 		s:AddInputCallback(input)
 		SCREENMAN:set_input_redirected(PLAYER_1, false)
 		setenv("NewOptions","Main")
+		if MenuMusicState and MenuMusicState.RestoreToWheel and s.GetMusicWheel then
+			local wheel = s:GetMusicWheel()
+			if wheel then
+				local restoredSong = MenuMusicState.RestoreToWheel(wheel)
+				if restoredSong and s.setTimeout then
+					s:setTimeout(function()
+						if MenuMusicState and MenuMusicState.RestorePlayback then
+							MenuMusicState.RestorePlayback(s)
+						end
+					end, 0.05)
+				end
+			end
+		end
 	end
 }
 
@@ -2550,10 +2563,18 @@ t[#t + 1] = Def.Actor {
 			SCREENMAN:SetNewScreen("ScreenAssetSettings")
 		end
 	end,
+	CurrentSongChangedMessageCommand = function(self)
+		if MenuMusicState and MenuMusicState.Save then
+			MenuMusicState.Save(GAMESTATE:GetCurrentSong(), nil)
+		end
+	end,
 	OnCommand = function(self)
 		inScreenSelectMusic = true
 	end,
 	EndCommand = function(self)
+		if MenuMusicState and MenuMusicState.CaptureFromTopScreen then
+			MenuMusicState.CaptureFromTopScreen(SCREENMAN:GetTopScreen())
+		end
 		if statsOverlayActive then
 			SCREENMAN:set_input_redirected(PLAYER_1, statsOverlayInputRedirect)
 			statsOverlayActive = false

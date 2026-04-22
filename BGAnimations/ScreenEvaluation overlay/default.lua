@@ -253,6 +253,17 @@ local function continueToSongSelect()
 	end
 end
 
+local function tryPlayReplay(score)
+	if not score then return false end
+	local top = SCREENMAN:GetTopScreen()
+	if top and top.PlayReplay then
+		top:PlayReplay(score)
+		return true
+	end
+	ms.ok("Replay playback is not available from this screen.")
+	return false
+end
+
  local function retryCurrentChart()
  	if not isLivePlay() then return end
  	SCREENMAN:SetNewScreen("ScreenGameplay")
@@ -1036,7 +1047,7 @@ local graphOverlay = Def.ActorFrame {
 		EvalOverlayStateChangedMessageCommand = function(self) self:queuecommand("Set") end,
 	},
 	UIElements.QuadButton(1, 1) .. {
-		InitCommand = function(self) self:xy(graphOverlayValueX, 54):zoomto(graphOverlayValueWidth, 28):halign(0):valign(0):diffusealpha(0) end,
+		InitCommand = function(self) self:xy(graphOverlayValueX - 6, 50):zoomto(graphOverlayValueWidth + 12, 36):halign(0):valign(0):diffusealpha(0) end,
 		MouseDownCommand = function(self, params) if params.event == "DeviceButton_left mouse button" then setEvalGraphDropdown("lineMode") end end,
 	},
 	dropdownFrame(graphOverlayValueX, 84, graphOverlayDropdownWidth, "lineMode", graphLineModes),
@@ -1262,13 +1273,14 @@ t[#t + 1] = Def.ActorFrame {
 			local hs = getCurrentScore()
 			if hs then
 				if hs:HasReplayData() then
-					SCREENMAN:GetTopScreen():PlayReplay(hs)
+					tryPlayReplay(hs)
 				elseif hs:GetReplay() ~= nil then
 					DLMAN:RequestOnlineScoreReplayData(
 						hs,
 						function()
-							if hs:GetReplay():HasReplayData() then
-								SCREENMAN:GetTopScreen():PlayReplay(hs)
+							local replay = hs:GetReplay()
+							if replay and replay:HasReplayData() then
+								tryPlayReplay(hs)
 							else
 								ms.ok("No replay data available.")
 							end

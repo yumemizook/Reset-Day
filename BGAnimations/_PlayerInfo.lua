@@ -17,6 +17,12 @@ local numfaves = 0
 local playerRating = 0
 local uploadbarwidth = 100
 local uploadbarheight = 10
+local profileMenuOpen = false
+local profileMenuWidth = 150
+local profileMenuItemHeight = 32
+local loginButtonWidth = 125
+local loginButtonHeight = 26
+local translated_info
 
 local ButtonColor = getMainColor("positive")
 local nonButtonColor = ColorMultiplier(getMainColor("positive"), 1.25)
@@ -42,7 +48,46 @@ local function highlightIfOver(self)
 	end
 end
 
-local translated_info = {
+local function pointInRect(x, y, left, top, width, height)
+	return x >= left and x <= left + width and y >= top and y <= top + height
+end
+
+local function isOverLoginButton(mouseX, mouseY)
+	return pointInRect(mouseX, mouseY, AvatarX + 22, AvatarY - (loginButtonHeight / 2), loginButtonWidth, loginButtonHeight)
+end
+
+local function isOverProfileMenu(mouseX, mouseY)
+	return pointInRect(mouseX, mouseY, AvatarX + 22, AvatarY + 18, profileMenuWidth, profileMenuItemHeight * 3)
+end
+
+local function setProfileMenuOpen(active)
+	profileMenuOpen = active and DLMAN:IsLoggedIn() or false
+	MESSAGEMAN:Broadcast("ProfileMenuStateChanged")
+end
+
+local function isTitleScreen()
+	local top = SCREENMAN and SCREENMAN.GetTopScreen and SCREENMAN:GetTopScreen() or nil
+	return top and top.GetName and top:GetName() == "ScreenTitleMenu"
+end
+
+local function performLogout(self)
+	if DLMAN:IsLoggedIn() then
+		local slot = pn_to_profile_slot and pn_to_profile_slot(PLAYER_1) or nil
+		local profile = PROFILEMAN and PROFILEMAN.GetProfile and PROFILEMAN:GetProfile(PLAYER_1) or nil
+		local hasLocalProfile = profile and profile.GetDisplayName and profile:GetDisplayName() ~= ""
+		if slot and hasLocalProfile then
+			playerConfig:get_data(slot).UserName = ""
+			playerConfig:get_data(slot).PasswordToken = ""
+			playerConfig:set_dirty(slot)
+			playerConfig:save(slot)
+		end
+		DLMAN:Logout()
+	end
+	setProfileMenuOpen(false)
+	self:settext(translated_info["NotLoggedIn"])
+end
+
+translated_info = {
 	ProfileNew = THEME:GetString("ProfileChanges", "ProfileNew"),
 	NameChange = THEME:GetString("ProfileChanges", "ProfileNameChange"),
 	ClickLogin = THEME:GetString("GeneralInfo", "ClickToLogin"),
@@ -149,7 +194,9 @@ t[#t + 1] = Def.ActorFrame {
 		self:queuecommand("Set")
 	end,
 	SetCommand = function(self)
-		if profile == nil then
+		if isTitleScreen() then
+			self:visible(true)
+		elseif profile == nil then
 			self:visible(false)
 		else
 			self:visible(true)
@@ -185,6 +232,12 @@ t[#t + 1] = Def.ActorFrame {
 			self:diffuse(ButtonColor)
 		end,
 		SetCommand = function(self)
+			if isTitleScreen() then
+				self:settext("")
+				self:visible(false)
+				return
+			end
+			self:visible(true)
 			self:settextf("%s (%5.2f)", profileName, playerRating)
 		end,
 		MouseDownCommand = function(self, params)
@@ -207,20 +260,45 @@ t[#t + 1] = Def.ActorFrame {
 		InitCommand = function(self)
 			self:xy(AvatarX + 22, AvatarY)
 		end,
+		BeginCommand = function(self)
+			SCREENMAN:GetTopScreen():AddInputCallback(function(event)
+				if not profileMenuOpen then return end
+				if event.type ~= "InputEventType_FirstPress" then return end
+				local deviceButton = event.DeviceInput and event.DeviceInput.button or ""
+				if event.button == "Back" or deviceButton == "DeviceButton_right mouse button" then
+					setProfileMenuOpen(false)
+					return true
+				end
+				if deviceButton == "DeviceButton_left mouse button" then
+					local mouseX = INPUTFILTER:GetMouseX()
+					local mouseY = INPUTFILTER:GetMouseY()
+					if not isOverLoginButton(mouseX, mouseY) and not isOverProfileMenu(mouseX, mouseY) then
+						setProfileMenuOpen(false)
+					end
+				end
+			end)
+			self:queuecommand("UpdateLoginStatus")
+		end,
 		UpdateLoginStatusCommand = function(self)
 			-- Background now always uses the dynamic accent color as requested
 			-- The diffuse is handled by the BGSprite actor directly via messages
 			-- but we ensure the alpha is consistent here.
 			self:GetChild("BGSprite"):diffusealpha(0.8)
+			self:GetChild("ProfileMenu"):queuecommand("Set")
 		end,
-		BeginCommand = function(self) self:queuecommand("UpdateLoginStatus") end,
 		DLMANLoginMessageCommand = function(self) self:queuecommand("UpdateLoginStatus") end,
-		DLMANLogoutMessageCommand = function(self) self:queuecommand("UpdateLoginStatus") end,
+		DLMANLogoutMessageCommand = function(self)
+			setProfileMenuOpen(false)
+			self:queuecommand("UpdateLoginStatus")
+		end,
+		ProfileMenuStateChangedMessageCommand = function(self)
+			self:GetChild("ProfileMenu"):queuecommand("Set")
+		end,
 
 		Def.Quad {
 			Name = "BGSprite",
 			InitCommand = function(self)
-				self:zoomto(125, 26):halign(0):valign(0.5):xy(0, 0):diffuse(getMainColor("highlight")):diffusealpha(0.8)
+				self:zoomto(loginButtonWidth, loginButtonHeight):halign(0):valign(0.5):xy(0, 0):diffuse(getMainColor("highlight")):diffusealpha(0.8)
 			end,
 			SetDynamicAccentColorMessageCommand = function(self, params)
 				self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.8)
@@ -248,24 +326,21 @@ t[#t + 1] = Def.ActorFrame {
 				end
 			end,
 			LogOutMessageCommand = function(self)
-				local top = SCREENMAN:GetTopScreen():GetName()
-				if DLMAN:IsLoggedIn() then
-					playerConfig:get_data(pn_to_profile_slot(PLAYER_1)).UserName = ""
-					playerConfig:get_data(pn_to_profile_slot(PLAYER_1)).PasswordToken = ""
-					playerConfig:set_dirty(pn_to_profile_slot(PLAYER_1))
-					playerConfig:save(pn_to_profile_slot(PLAYER_1))
-					DLMAN:Logout()
-				end
-				self:settext(translated_info["NotLoggedIn"])
+				performLogout(self)
 			end,
 		LoginMessageCommand = function(self)
 			if not SCREENMAN:GetTopScreen() then return end
 			local top = SCREENMAN:GetTopScreen():GetName()
 			if not DLMAN:IsLoggedIn() then return end
-			playerConfig:get_data(pn_to_profile_slot(PLAYER_1)).UserName = DLMAN:GetUsername()
-			playerConfig:get_data(pn_to_profile_slot(PLAYER_1)).PasswordToken = DLMAN:GetToken()
-			playerConfig:set_dirty(pn_to_profile_slot(PLAYER_1))
-			playerConfig:save(pn_to_profile_slot(PLAYER_1))
+			local slot = pn_to_profile_slot and pn_to_profile_slot(PLAYER_1) or nil
+			local profile = PROFILEMAN and PROFILEMAN.GetProfile and PROFILEMAN:GetProfile(PLAYER_1) or nil
+			local hasLocalProfile = profile and profile.GetDisplayName and profile:GetDisplayName() ~= ""
+			if slot and hasLocalProfile then
+				playerConfig:get_data(slot).UserName = DLMAN:GetUsername()
+				playerConfig:get_data(slot).PasswordToken = DLMAN:GetToken()
+				playerConfig:set_dirty(slot)
+				playerConfig:save(slot)
+			end
 			
 			self:settextf(
 				"%s (%5.2f)",
@@ -276,12 +351,14 @@ t[#t + 1] = Def.ActorFrame {
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" and not SCREENMAN:get_input_redirected(PLAYER_1) then
 				if DLMAN:IsLoggedIn() then
-					DLMAN:ShowUserPage(DLMAN:GetUsername())
+					setProfileMenuOpen(not profileMenuOpen)
 				else
+					setProfileMenuOpen(false)
 					loginStep1(self)
 				end
 			elseif params.event == "DeviceButton_right mouse button" and not SCREENMAN:get_input_redirected(PLAYER_1) then
 				if DLMAN:IsLoggedIn() then
+					setProfileMenuOpen(false)
 					self:queuecommand("LogOut")
 				end
 			end
@@ -300,6 +377,7 @@ t[#t + 1] = Def.ActorFrame {
 		end,
 		LoginHotkeyPressedMessageCommand = function(self)
 			if DLMAN:IsLoggedIn() then
+				setProfileMenuOpen(false)
 				self:queuecommand("LogOut")
 			else
 				loginStep1(self)
@@ -308,33 +386,86 @@ t[#t + 1] = Def.ActorFrame {
 		LoginStep2Command = function(self)
 			loginStep2()
 		end
+		},
+		Def.ActorFrame {
+			Name = "ProfileMenu",
+			InitCommand = function(self)
+				self:xy(0, 18)
+			end,
+			SetCommand = function(self)
+				self:visible(profileMenuOpen and DLMAN:IsLoggedIn())
+			end,
+			DLMANLoginMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			DLMANLogoutMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			ProfileMenuStateChangedMessageCommand = function(self)
+				self:queuecommand("Set")
+			end,
+			Def.Quad {
+				InitCommand = function(self)
+					self:halign(0):valign(0):zoomto(profileMenuWidth, profileMenuItemHeight * 3):diffuse(color("#000000")):diffusealpha(0.75)
+				end
+			},
+			Def.Quad {
+				InitCommand = function(self)
+					self:halign(0):valign(0):zoomto(profileMenuWidth, profileMenuItemHeight * 3):diffuse(getMainColor("highlight")):diffusealpha(0.35)
+				end,
+				SetDynamicAccentColorMessageCommand = function(self, params)
+					self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.35)
+				end
+			},
+			(function()
+				local function menuItem(index, label, action)
+					return Def.ActorFrame {
+						InitCommand = function(self)
+							self:y((index - 1) * profileMenuItemHeight)
+						end,
+						UIElements.QuadButton(1, 1) .. {
+							InitCommand = function(self)
+								self:halign(0):valign(0):zoomto(profileMenuWidth, profileMenuItemHeight):diffuse(color("#000000")):diffusealpha(0)
+							end,
+							MouseOverCommand = function(self)
+								self:diffuse(getMainColor("highlight")):diffusealpha(0.35)
+							end,
+							MouseOutCommand = function(self)
+								self:diffuse(color("#000000")):diffusealpha(0)
+							end,
+							MouseDownCommand = function(self, params)
+								if params.event == "DeviceButton_left mouse button" then
+									setProfileMenuOpen(false)
+									action(self)
+								end
+							end
+						},
+						LoadFont("Common Normal") .. {
+							InitCommand = function(self)
+								self:xy(12, profileMenuItemHeight / 2):halign(0):zoom(0.45):settext(label)
+							end
+						}
+					}
+				end
+				local menu = Def.ActorFrame {}
+				menu[#menu + 1] = menuItem(1, "Multiplayer", function()
+					SCREENMAN:SetNewScreen(Branch.MultiScreen())
+				end)
+				menu[#menu + 1] = menuItem(2, "Profile", function()
+					DLMAN:ShowUserPage(DLMAN:GetUsername())
+				end)
+				menu[#menu + 1] = menuItem(3, "Log out", function(self)
+					self:GetParent():GetParent():GetParent():GetParent():GetChild("loginlogout"):queuecommand("LogOut")
+				end)
+				return menu
+			end)()
+		},
 	},
 }
-}
 
 
 
---[[
-t[#t + 1] = Def.ActorFrame {
-	InitCommand = function(self)
-		self:SetUpdateFunction(UpdateTime)
-	end,
-	-- Session/Footer time commented out as requested
-	-- LoadFont("Common Normal") .. {
-	-- 	Name = "CurrentTime",
-	-- 	InitCommand = function(self)
-	-- 		self:xy(SCREEN_WIDTH - 3, SCREEN_BOTTOM - 3.5):halign(1):valign(1):zoom(0.45)
-	-- 	end
-	-- },
 
-	-- LoadFont("Common Normal") .. {
-	-- 	Name = "SessionTime",
-	-- 	InitCommand = function(self)
-	-- 		self:xy(SCREEN_CENTER_X, SCREEN_BOTTOM - 5):halign(0.5):valign(1):zoom(0.45)
-	-- 	end
-	-- }
-}
-]]--
 
 local function UpdateAvatar(self)
 	if getAvatarUpdateStatus() then

@@ -23,6 +23,7 @@ local onlyChangedSteps = false
 local shouldPlayMusic = false
 local prevtab = 0
 local ctags = {}
+local previewLoopToken = 0
 
 local itsOn = false
 
@@ -39,11 +40,70 @@ local translated_info = {
 	PlayerOptions = THEME:GetString("ScreenSelectMusic", "PlayerOptions"),
 }
 
+local function stopPreviewLoop()
+	previewLoopToken = previewLoopToken + 1
+end
+
+local function getPreviewStartSeconds(song)
+	if not song then return 0 end
+	local candidates = {
+		function() return song:GetSampleStart() end,
+		function() return song:GetSampleStartSeconds() end,
+		function() return song:GetMusicSampleStartSeconds() end,
+		function() return song:GetPreviewStartSeconds() end,
+	}
+	for _, candidate in ipairs(candidates) do
+		local ok, value = pcall(candidate)
+		if ok and type(value) == "number" and value >= 0 then
+			return value
+		end
+	end
+	return 0
+end
+
+local function playPreviewMusicPart(song, startSeconds)
+	if not song then return 0 end
+	local musicPath = song:GetMusicPath()
+	local songLength = song:MusicLengthSeconds()
+	if not musicPath or musicPath == "" or not songLength or songLength <= 0 then
+		return 0
+	end
+	startSeconds = math.max(0, math.min(startSeconds or 0, songLength))
+	local playLength = math.max(songLength - startSeconds, 0)
+	if playLength <= 0 then return 0 end
+	SOUND:StopMusic()
+	SOUND:PlayMusicPart(musicPath, startSeconds, playLength)
+	MESSAGEMAN:Broadcast("PreviewMusicStarted")
+	return playLength
+end
+
+local function schedulePreviewLoop(song, token, delay, restartAtBeginning)
+	local top = SCREENMAN:GetTopScreen()
+	if not top or not top.setTimeout or delay <= 0 then return end
+	top:setTimeout(function()
+		if previewLoopToken ~= token then return end
+		if not previewVisible then return end
+		if GAMESTATE:GetCurrentSong() ~= song then return end
+		local startSeconds = restartAtBeginning and 0 or getPreviewStartSeconds(song)
+		local nextDelay = playPreviewMusicPart(song, startSeconds)
+		if nextDelay > 0 then
+			schedulePreviewLoop(song, token, nextDelay, true)
+		end
+	end, delay)
+end
+
 -- to reduce repetitive code for setting preview music position with booleans
 local function playMusicForPreview(song)
-	SOUND:StopMusic()
-	SCREENMAN:GetTopScreen():PlayCurrentSongSampleMusic(true, true)
-	MESSAGEMAN:Broadcast("PreviewMusicStarted") -- this is lying tbh
+	stopPreviewLoop()
+	local token = previewLoopToken
+	local initialDelay = playPreviewMusicPart(song, getPreviewStartSeconds(song))
+	if initialDelay > 0 then
+		schedulePreviewLoop(song, token, initialDelay, true)
+	else
+		SOUND:StopMusic()
+		SCREENMAN:GetTopScreen():PlayCurrentSongSampleMusic(true, true)
+		MESSAGEMAN:Broadcast("PreviewMusicStarted")
+	end
 
 	restartedMusic = true
 
@@ -74,6 +134,9 @@ local function setPreviewPartsState(state)
 	mcbootlarder:GetChild("NoteField"):visible(state)
 	heyiwasusingthat = not state
 	previewVisible = state
+	if not state then
+		stopPreviewLoop()
+	end
 	if state ~= infoOnScreen and not state then
 		toggleCalcInfo(false)
 	end
@@ -368,6 +431,7 @@ local t = Def.ActorFrame {
 	end,
 	OffCommand = function(self)
 		self:bouncebegin(0.2):xy(-500, 0):diffusealpha(0)
+		stopPreviewLoop()
 		toggleCalcInfo(false)
 		self:sleep(0.04):queuecommand("Invis")
 	end,
@@ -378,6 +442,7 @@ local t = Def.ActorFrame {
 		self:bouncebegin(0.2):xy(0, 0):diffusealpha(1)
 	end,
 	CurrentSongChangedMessageCommand = function()
+		stopPreviewLoop()
 		-- This will disable mirror when switching songs if OneShotMirror is enabled or if permamirror is flagged on the chart (it is enabled if so in screengameplayunderlay/default)
 		if playerConfig:get_data(pn_to_profile_slot(PLAYER_1)).OneShotMirror or profile:IsCurrentChartPermamirror() then
 			local modslevel = topscreen == "ScreenEditOptions" and "ModsLevel_Stage" or "ModsLevel_Preferred"

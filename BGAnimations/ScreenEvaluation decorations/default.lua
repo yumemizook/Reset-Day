@@ -250,8 +250,6 @@ local skillsetBaseKeyByName = {
 	Stream = "NPSBase",
 	Jumpstream = "NPSBase",
 	Handstream = "NPSBase",
-	Stamina = "MSDStream",
-	JackSpeed = "CJBase",
 	Chordjack = "CJBase",
 	ChordJack = "CJBase",
 	Technical = "TechBase",
@@ -261,21 +259,21 @@ local skillsetBpmScaleByName = {
 	Stream = 15,
 	Jumpstream = 15,
 	Handstream = 15,
-	Stamina = 12,
-	JackSpeed = 6,
-	Chordjack = 6,
-	ChordJack = 6,
-	Technical = 5,
+	Chordjack = 15,
+	ChordJack = 15,
+	Technical = 15,
 }
 
 local function getSkillsetValueAtRate(steps, rate, skillsetName)
 	local ok, value = pcall(function()
-		if skillsetName == "Stream" then
+		if skillsetName == "Overall" then
 			return steps:GetMSD(rate, 1)
-		elseif skillsetName == "Jumpstream" then
+		elseif skillsetName == "Stream" then
 			return steps:GetMSD(rate, 2)
-		elseif skillsetName == "Handstream" then
+		elseif skillsetName == "Jumpstream" then
 			return steps:GetMSD(rate, 3)
+		elseif skillsetName == "Handstream" then
+			return steps:GetMSD(rate, 4)
 		elseif skillsetName == "Stamina" then
 			return steps:GetMSD(rate, 5)
 		elseif skillsetName == "JackSpeed" then
@@ -291,7 +289,7 @@ local function getSkillsetValueAtRate(steps, rate, skillsetName)
 	return nil
 end
 
-local function getDominantSkillsets(steps, rate, maxCount)
+local function getOrderedRelevantSkillsets(steps, rate)
 	if not steps then return {} end
 	local scored = {}
 	for _, skillsetName in ipairs(ms.SkillSets) do
@@ -303,30 +301,42 @@ local function getDominantSkillsets(steps, rate, maxCount)
 		end
 	end
 	table.sort(scored, function(a, b) return a.value > b.value end)
+	local ordered = {}
+	for _, entry in ipairs(scored) do
+		ordered[#ordered + 1] = entry.name
+	end
+	return ordered
+end
+
+local function getDominantSkillsets(steps, rate, maxCount)
+	if not steps then return {} end
+	local ordered = getOrderedRelevantSkillsets(steps, rate)
+	if #ordered == 0 then return {} end
 	local results = {}
-	local topSkillset = scored[1] and scored[1].name or nil
+	local topSkillset = ordered[1]
 	local suppressSecondary = {
 		Technical = true,
 		Stamina = true,
 	}
-	for _, entry in ipairs(scored) do
-		local skillsetName = entry.name
-		local allow = true
-		if suppressSecondary[skillsetName] and skillsetName ~= topSkillset then
-			allow = false
-		end
-		if allow then
-			results[#results + 1] = skillsetName
-			if #results >= maxCount then break end
+	for _, skillsetName in ipairs(ordered) do
+		if skillsetName ~= "Overall" then
+			local allow = true
+			if suppressSecondary[skillsetName] and skillsetName ~= topSkillset then
+				allow = false
+			end
+			if allow then
+				results[#results + 1] = skillsetName
+				if #results >= maxCount then break end
+			end
 		end
 	end
 	return results
 end
 
 local function getPrimarySkillsetLabel(steps)
-	if not steps then return "" end
+	if not steps then return "Uncategorised" end
 	local dominant = getDominantSkillsets(steps, getDisplayedRateValue(), 1)
-	if #dominant == 0 then return "" end
+	if #dominant == 0 then return "Uncategorised" end
 	return ms.SkillSetsTranslatedByName[dominant[1]] or dominant[1]
 end
 
@@ -385,14 +395,15 @@ end
 
 local function getMinaPatternBpmBreakdown(steps)
 	if not steps then return "" end
-	local dominant = getDominantSkillsets(steps, getDisplayedRateValue(), 2)
+	local rate = getDisplayedRateValue()
+	local dominant = getDominantSkillsets(steps, rate, 2)
 	if #dominant == 0 then return "" end
 	local parts = {}
 	for _, skillsetName in ipairs(dominant) do
-		local bpm = getPatternBpmForSkillset(steps, getDisplayedRateValue(), skillsetName)
+		local bpm = getPatternBpmForSkillset(steps, rate, skillsetName)
 		if bpm then
 			local translated = ms.SkillSetsTranslatedByName[skillsetName] or skillsetName
-			parts[#parts + 1] = string.format("%dBPM %s", bpm, translated)
+			parts[#parts + 1] = string.format("%d BPM %s", bpm, translated)
 		end
 	end
 	return table.concat(parts, ", ")

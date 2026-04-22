@@ -6,6 +6,8 @@ local hoverAlpha = 0.6
 local showVisualizer = themeConfig:get_data().global.ShowVisualizer
 local frameVisualizerColor = color("#FFFFFF")
 local loadingScreen = Var("LoadingScreen") or ""
+local headerButtonHeight = topFrameHeight - 6
+local isTitleFrame = loadingScreen == "ScreenTitleMenu"
 local useEvaluationFrame = loadingScreen == "ScreenEvaluation" or loadingScreen == "ScreenEvaluationNormal" or loadingScreen == "ScreenNetEvaluation"
 
 local function frameVisualizer(y, maxHeight, alpha)
@@ -38,19 +40,55 @@ local function footerVisualizer()
 	return frameVisualizer(SCREEN_HEIGHT - 1, bottomFrameHeight - 3, 0.4)
 end
 
-local function headerButton(x, text, icon, cmd)
-	return UIElements.TextToolTip(1, 1, "Common Normal") .. {
+local function getFrameSong()
+	if MenuMusicState and MenuMusicState.GetScreenSong then
+		return MenuMusicState.GetScreenSong(SCREENMAN:GetTopScreen())
+	end
+	return nil
+end
+
+local function headerButton(x, width, text, icon, cmd)
+	local labelText = (icon ~= "" and (icon .. " " .. text) or text)
+	return Def.ActorFrame {
 		InitCommand = function(self)
-			self:xy(x, topFrameHeight / 2):zoom(0.45):halign(0)
-			self:settext(icon .. " " .. text)
+			self:xy(x, topFrameHeight / 2)
 		end,
-		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha) end,
-		MouseOutCommand = function(self) self:diffusealpha(1) end,
-		MouseDownCommand = function(self, params)
-			if params.event == "DeviceButton_left mouse button" then
-				cmd()
+		UIElements.QuadButton(1, 1) .. {
+			InitCommand = function(self)
+				self:halign(0):valign(0.5):zoomto(width, headerButtonHeight):diffuse(color("#000000")):diffusealpha(0.35)
+			end,
+			MouseOverCommand = function(self)
+				self:stoptweening():linear(0.1):diffusealpha(0.6)
+			end,
+			MouseOutCommand = function(self)
+				self:stoptweening():linear(0.1):diffusealpha(0.35)
+			end,
+			MouseDownCommand = function(self, params)
+				if params.event == "DeviceButton_left mouse button" then
+					cmd()
+				end
 			end
-		end
+		},
+		Def.Quad {
+			InitCommand = function(self)
+				self:halign(0):valign(0.5):zoomto(width, headerButtonHeight):diffuse(getMainColor("frames")):diffusealpha(0.55)
+			end,
+			SetDynamicAccentColorMessageCommand = function(self, params)
+				self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.55)
+			end
+		},
+		LoadFont("Common Normal") .. {
+			InitCommand = function(self)
+				self:xy(10, 0):zoom(0.5):halign(0):settext(labelText)
+			end,
+			MouseOverCommand = function(self) self:diffusealpha(hoverAlpha) end,
+			MouseOutCommand = function(self) self:diffusealpha(1) end,
+			MouseDownCommand = function(self, params)
+				if params.event == "DeviceButton_left mouse button" then
+					cmd()
+				end
+			end
+		}
 	}
 end
 
@@ -117,16 +155,12 @@ if not useEvaluationFrame then
 				self:zoom(0.45):halign(0):diffuse(color("#FFFFFF"))
 			end,
 			SetCommand = function(self)
-				local song = GAMESTATE:GetCurrentSong()
+				local song = getFrameSong()
 				local str = "None"
 				if song then
 					local title = song:GetDisplayMainTitle()
 					local artist = song:GetDisplayArtist()
 					str = title .. " - " .. artist
-					
-					if HandleSongChangeForHistory then
-						HandleSongChangeForHistory()
-					end
 				else
 					str = "MUSIC PLAYER: NONE"
 				end
@@ -154,6 +188,7 @@ if not useEvaluationFrame then
 			end,
 			OnCommand = function(self) self:playcommand("Set") end,
 			CurrentSongChangedMessageCommand = function(self) self:playcommand("Set") end,
+			MenuMusicStateChangedMessageCommand = function(self) self:playcommand("Set") end,
 		}
 	}
 
@@ -184,16 +219,16 @@ if not useEvaluationFrame then
 	t[#t + 1] = clippingCover(425, SCREEN_WIDTH - 425) -- Right cover
   
 	-- Header Buttons
-	t[#t + 1] = headerButton(10, "", "≡", function() MESSAGEMAN:Broadcast("ToggleMenu") end)
-	t[#t + 1] = headerButton(40, "Options", "⚙", function() SCREENMAN:SetNewScreen("ScreenOptionsService") end)
-	t[#t + 1] = headerButton(115, "Upload All", "", function()
-		if DLMAN:IsLoggedIn() then
-			DLMAN:UploadAllScores()
+	t[#t + 1] = headerButton(6, 34, "", "≡", function() MESSAGEMAN:Broadcast("ToggleMenu") end)
+	t[#t + 1] = headerButton(50, 114, "Options", "⚙", function() SCREENMAN:SetNewScreen("ScreenOptionsService") end)
+	t[#t + 1] = headerButton(178, 114, "Packs", "", function() SCREENMAN:SetNewScreen("ScreenPackDownloader") end)
+	t[#t + 1] = headerButton(306, 108, isTitleFrame and "Wiki" or "Stats", "", function()
+		if isTitleFrame then
+			SCREENMAN:SetNewScreen("ScreenWiki")
 		else
-			ms.ok("You must be logged in...")
+			MESSAGEMAN:Broadcast("ToggleStatsOverlay")
 		end
 	end)
-	t[#t + 1] = headerButton(210, "Stats", "", function() MESSAGEMAN:Broadcast("ToggleStatsOverlay") end)
   
 	-- Footer Elements (Drawn on top of covers)
 	-- Back Button
@@ -207,6 +242,8 @@ if not useEvaluationFrame then
 				local top = SCREENMAN:GetTopScreen()
 				if top and top.GetMusicWheel then
 					top:GetMusicWheel():SelectSong(prev)
+				elseif MenuMusicState and MenuMusicState.Save then
+					MenuMusicState.Save(prev, 0)
 				end
 			end
 		end

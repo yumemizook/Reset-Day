@@ -14,6 +14,8 @@ local defaultConfig = {
 		FadeNoteFieldInSyncMachine = true,
 		ShowPlayerOptionsHint = true,
 		ShowBanners = true, -- false to turn off banners everywhere
+		LastSongChartKey = "",
+		LastSampleMusicPosition = 0,
 	},
 	NPSDisplay = {
 		MaxWindow = 2,

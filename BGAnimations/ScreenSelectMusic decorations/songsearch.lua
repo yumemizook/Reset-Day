@@ -21,13 +21,14 @@ local function searchInput(event)
 	end
 
 	if event.type ~= "InputEventType_Release" and active == true then
+		local deviceButton = event.DeviceInput and event.DeviceInput.button or ""
 		if event.button == "Back" then
 			searchstring = ""
 			whee:SongSearch(searchstring)
 			active = false
 			SCREENMAN:set_input_redirected(PLAYER_1, false)
 			MESSAGEMAN:Broadcast("EndingSearch")
-		elseif event.button == "Start" then
+		elseif event.button == "Start" or deviceButton == "DeviceButton_enter" then
 			if not instantSearch then
 				whee:SongSearch(searchstring)
 			end
