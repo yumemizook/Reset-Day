@@ -30,6 +30,26 @@ local function getDisplayName()
 	return "Guest"
 end
 
+local function getLocalProfileSummaryText()
+	local profile = GetPlayerOrMachineProfile(PLAYER_1)
+	if not profile then
+		return "Local: Guest"
+	end
+	local name = profile:GetDisplayName()
+	if not name or name == "" then
+		name = "Guest"
+	end
+	local rating = profile.GetPlayerRating and profile:GetPlayerRating() or 0
+	return string.format("Local: %s (%5.2f)", name, rating)
+end
+
+local function getOnlineProfileSummaryText()
+	if DLMAN:IsLoggedIn() then
+		return string.format("Online: %s (%5.2f)", DLMAN:GetUsername(), DLMAN:GetSkillsetRating("Overall"))
+	end
+	return "Online: Not logged in"
+end
+
 local function getStepHeaderText()
 	local steps = GAMESTATE:GetCurrentSteps()
 	local style = GAMESTATE:GetCurrentStyle()
@@ -192,10 +212,17 @@ local function getDisplayedGrade(useRescored)
 	return score:GetWifeGrade()
 end
 
+local function isLivePlay()
+	local top = SCREENMAN:GetTopScreen()
+	if not top or not top.GetStageStats then return false end
+	local ss = top:GetStageStats()
+	return ss and ss:GetLivePlay()
+end
+
 local function getRecordLabel(score)
 	local recordScore = getCurrentRateRecordScore(score)
 	if not recordScore then return "" end
-	if recordScore == score and score == SCOREMAN:GetMostRecentScore() then
+	if isLivePlay() and recordScore == score and score == SCOREMAN:GetMostRecentScore() then
 		return "New record!"
 	end
 	local recordPercent = recordScore:GetWifeScore() * 100
@@ -233,17 +260,10 @@ end
 local function getClearRecordLabel(score)
 	local recordScore = getCurrentRateRecordScore(score)
 	if not recordScore then return "" end
-	if recordScore == score and score == SCOREMAN:GetMostRecentScore() then
+	if isLivePlay() and recordScore == score and score == SCOREMAN:GetMostRecentScore() then
 		return "New record!"
 	end
 	return "Your record: " .. getClearTypeFromScore(PLAYER_1, recordScore, 0)
-end
-
-local function isLivePlay()
-	local top = SCREENMAN:GetTopScreen()
-	if not top or not top.GetStageStats then return false end
-	local ss = top:GetStageStats()
-	return ss and ss:GetLivePlay()
 end
 
 local function continueToSongSelect()
@@ -259,206 +279,209 @@ local function tryPlayReplay(score)
 	if top and top.PlayReplay then
 		top:PlayReplay(score)
 		return true
+	elseif top and top.GetName and top:GetName() == "ScreenEvaluation" then
+		setenv("PendingReplayScoreFromEvaluation", score)
+		continueToSongSelect()
+		return true
 	end
 	ms.ok("Replay playback is not available from this screen.")
 	return false
 end
 
- local function retryCurrentChart()
- 	if not isLivePlay() then return end
- 	SCREENMAN:SetNewScreen("ScreenGameplay")
- end
- 
- local function copyTable(inTable)
- 	local out = {}
- 	for k, v in pairs(inTable or {}) do
- 		if type(v) == "table" then
- 			out[k] = copyTable(v)
- 		else
- 			out[k] = v
- 		end
- 	end
- 	return out
- end
- 
- local evalOverlayOpen = nil
- local evalGraphDropdown = nil
- local evalChartActionsMode = "main"
- local evalPlaylistPage = 1
- local evalPlaylistPageSize = 8
- local evalGraphSettings = {
- 	lineMode = "Combo",
+local function retryCurrentChart()
+	if not isLivePlay() then return end
+	SCREENMAN:SetNewScreen("ScreenGameplay")
+end
+
+local function copyTable(inTable)
+	local out = {}
+	for k, v in pairs(inTable or {}) do
+		if type(v) == "table" then
+			out[k] = copyTable(v)
+		else
+			out[k] = v
+		end
+	end
+	return out
+end
+
+local evalOverlayOpen = nil
+local evalGraphDropdown = nil
+local evalChartActionsMode = "main"
+local evalPlaylistPage = 1
+local evalPlaylistPageSize = 8
+local evalGraphSettings = {
+	lineMode = "Combo",
 	lineColor = "Clear Type",
- 	lineOnTop = true,
- 	columnFilter = {},
- 	scale = 100,
- 	showTimingWindows = true,
- 	hoverInfo = "Cumulative",
- 	sliceWidth = 4,
- }
- 
- local function normalizeEvalGraphSettings()
+	lineOnTop = true,
+	columnFilter = {},
+	scale = 100,
+	showTimingWindows = true,
+	hoverInfo = "Cumulative",
+	sliceWidth = 4,
+}
+
+local function normalizeEvalGraphSettings()
 	if evalGraphSettings.lineMode == "Standard deviation" then
 		evalGraphSettings.lineMode = "SD"
 	end
- 	if evalGraphSettings.lineColor == "Lamp" then
- 		evalGraphSettings.lineColor = "Clear Type"
- 	end
- 	evalGraphSettings.onlyShowReleases = nil
- 	evalGraphSettings.scale = clamp(tonumber(evalGraphSettings.scale) or 100, 5, 300)
- 	evalGraphSettings.sliceWidth = clamp(math.floor(tonumber(evalGraphSettings.sliceWidth) or 4), 1, 12)
- end
- 
- local function loadPersistedEvalGraphSettings()
- 	if not themeConfig or not themeConfig.get_data then return end
- 	local config = themeConfig:get_data()
- 	local globalConfig = config and config.global or nil
- 	local saved = globalConfig and globalConfig.EvalGraphSettings or nil
- 	if type(saved) ~= "table" then return end
- 	for k, v in pairs(saved) do
- 		if type(v) == "table" then
- 			evalGraphSettings[k] = copyTable(v)
- 		else
- 			evalGraphSettings[k] = v
- 		end
- 	end
- 	normalizeEvalGraphSettings()
- end
- 
- local function persistEvalGraphSettings()
- 	if not themeConfig or not themeConfig.get_data then return end
- 	local config = themeConfig:get_data()
- 	config.global = config.global or {}
- 	config.global.EvalGraphSettings = copyTable(evalGraphSettings)
- 	themeConfig:set_dirty()
- 	themeConfig:save()
- end
- 
- local function ensureColumnFilter()
- 	local steps = GAMESTATE:GetCurrentSteps()
- 	local style = GAMESTATE:GetCurrentStyle()
- 	local columns = 4
- 	if steps and steps.GetNumColumns then
- 		local ok, result = pcall(function() return steps:GetNumColumns() end)
- 		if ok and result and result > 0 then
- 			columns = result
- 		end
- 	elseif style and style.ColumnsPerPlayer then
- 		local ok, result = pcall(function() return style:ColumnsPerPlayer() end)
- 		if ok and result and result > 0 then
- 			columns = result
- 		end
- 	end
- 	for i = 1, columns do
- 		if evalGraphSettings.columnFilter[i] == nil then
- 			evalGraphSettings.columnFilter[i] = true
- 		end
- 	end
- 	for i = columns + 1, #evalGraphSettings.columnFilter do
- 		evalGraphSettings.columnFilter[i] = nil
- 	end
- end
- 
- local function broadcastEvalGraphSettings()
+	if evalGraphSettings.lineColor == "Lamp" then
+		evalGraphSettings.lineColor = "Clear Type"
+	end
+	evalGraphSettings.onlyShowReleases = nil
+	evalGraphSettings.scale = clamp(tonumber(evalGraphSettings.scale) or 100, 5, 300)
+	evalGraphSettings.sliceWidth = clamp(math.floor(tonumber(evalGraphSettings.sliceWidth) or 4), 1, 12)
+end
+
+local function loadPersistedEvalGraphSettings()
+	if not themeConfig or not themeConfig.get_data then return end
+	local config = themeConfig:get_data()
+	local globalConfig = config and config.global or nil
+	local saved = globalConfig and globalConfig.EvalGraphSettings or nil
+	if type(saved) ~= "table" then return end
+	for k, v in pairs(saved) do
+		if type(v) == "table" then
+			evalGraphSettings[k] = copyTable(v)
+		else
+			evalGraphSettings[k] = v
+		end
+	end
 	normalizeEvalGraphSettings()
- 	ensureColumnFilter()
- 	persistEvalGraphSettings()
- 	_G.ResetDayEvalGraphSettings = copyTable(evalGraphSettings)
- 	MESSAGEMAN:Broadcast("EvalGraphSettingsChanged", {settings = copyTable(evalGraphSettings)})
- end
- 
- local function setEvalOverlayOpen(name)
- 	evalOverlayOpen = name
- 	if name ~= "graph" then
- 		evalGraphDropdown = nil
- 	end
- 	if name ~= "chartActions" then
- 		evalChartActionsMode = "main"
- 		evalPlaylistPage = 1
- 	end
- 	MESSAGEMAN:Broadcast("EvalOverlayStateChanged", {open = evalOverlayOpen, graphDropdown = evalGraphDropdown, chartActionsMode = evalChartActionsMode})
- end
- 
- local function setEvalGraphDropdown(name)
- 	if evalGraphDropdown == name then
- 		evalGraphDropdown = nil
- 	else
- 		evalGraphDropdown = name
- 	end
- 	MESSAGEMAN:Broadcast("EvalOverlayStateChanged", {open = evalOverlayOpen, graphDropdown = evalGraphDropdown, chartActionsMode = evalChartActionsMode})
- end
- 
- local function getEvalPlaylists()
- 	local playlists = SONGMAN:GetPlaylists() or {}
- 	table.sort(playlists, function(a, b)
- 		if not a or not b then return false end
- 		if a:GetName() == "Favorites" then return true end
- 		if b:GetName() == "Favorites" then return false end
- 		return string.lower(a:GetName()) < string.lower(b:GetName())
- 	end)
- 	return playlists
- end
- 
- local function getCurrentChartKey()
- 	local steps = GAMESTATE:GetCurrentSteps()
- 	if not steps then return nil end
- 	local ok, chartKey = pcall(function() return steps:GetChartKey() end)
- 	if ok then
- 		return chartKey
- 	end
- 	return nil
- end
- 
- local function findPlaylistByName(name)
- 	if not name or name == "" then return nil end
- 	for _, playlist in ipairs(getEvalPlaylists()) do
- 		if playlist and playlist:GetName() == name then
- 			return playlist
- 		end
- 	end
- 	return nil
- end
- 
- local function playlistContainsChart(playlist, chartKey)
- 	if not playlist or not chartKey then return false, nil end
- 	local ok, keys = pcall(function() return playlist:GetChartkeys() end)
- 	if not ok or not keys then return false, nil end
- 	for i, key in ipairs(keys) do
- 		if key == chartKey then
- 			return true, i
- 		end
- 	end
- 	return false, nil
- end
- 
- local function tryCallMethod(target, methodNames, ...)
- 	if not target then return false end
- 	for _, methodName in ipairs(methodNames) do
- 		local method = target[methodName]
- 		if type(method) == "function" then
- 			local ok, result = pcall(method, target, ...)
- 			if ok then
- 				return true, result, methodName
- 			end
- 		end
- 	end
- 	return false
- end
- 
- local function ensurePlaylistExists(name)
- 	local playlist = findPlaylistByName(name)
- 	if playlist then
- 		return true, playlist
- 	end
- 	local ok = false
- 	ok = tryCallMethod(SONGMAN, {"CreatePlaylist", "AddPlaylist", "MakePlaylist", "NewPlaylist"}, name)
- 	if ok then
- 		playlist = findPlaylistByName(name)
- 	end
- 	return playlist ~= nil, playlist
- end
- 
- local function addCurrentChartToPlaylist(name)
+end
+
+local function persistEvalGraphSettings()
+	if not themeConfig or not themeConfig.get_data then return end
+	local config = themeConfig:get_data()
+	config.global = config.global or {}
+	config.global.EvalGraphSettings = copyTable(evalGraphSettings)
+	themeConfig:set_dirty()
+	themeConfig:save()
+end
+
+local function ensureColumnFilter()
+	local steps = GAMESTATE:GetCurrentSteps()
+	local style = GAMESTATE:GetCurrentStyle()
+	local columns = 4
+	if steps and steps.GetNumColumns then
+		local ok, result = pcall(function() return steps:GetNumColumns() end)
+		if ok and result and result > 0 then
+			columns = result
+		end
+	elseif style and style.ColumnsPerPlayer then
+		local ok, result = pcall(function() return style:ColumnsPerPlayer() end)
+		if ok and result and result > 0 then
+			columns = result
+		end
+	end
+	for i = 1, columns do
+		if evalGraphSettings.columnFilter[i] == nil then
+			evalGraphSettings.columnFilter[i] = true
+		end
+	end
+	for i = columns + 1, #evalGraphSettings.columnFilter do
+		evalGraphSettings.columnFilter[i] = nil
+	end
+end
+
+local function broadcastEvalGraphSettings()
+	normalizeEvalGraphSettings()
+	ensureColumnFilter()
+	persistEvalGraphSettings()
+	_G.ResetDayEvalGraphSettings = copyTable(evalGraphSettings)
+	MESSAGEMAN:Broadcast("EvalGraphSettingsChanged", {settings = copyTable(evalGraphSettings)})
+end
+
+local function setEvalOverlayOpen(name)
+	evalOverlayOpen = name
+	if name ~= "graph" then
+		evalGraphDropdown = nil
+	end
+	if name ~= "chartActions" then
+		evalChartActionsMode = "main"
+		evalPlaylistPage = 1
+	end
+	MESSAGEMAN:Broadcast("EvalOverlayStateChanged", {open = evalOverlayOpen, graphDropdown = evalGraphDropdown, chartActionsMode = evalChartActionsMode})
+end
+
+local function setEvalGraphDropdown(name)
+	if evalGraphDropdown == name then
+		evalGraphDropdown = nil
+	else
+		evalGraphDropdown = name
+	end
+	MESSAGEMAN:Broadcast("EvalOverlayStateChanged", {open = evalOverlayOpen, graphDropdown = evalGraphDropdown, chartActionsMode = evalChartActionsMode})
+end
+
+local function getEvalPlaylists()
+	local playlists = SONGMAN:GetPlaylists() or {}
+	table.sort(playlists, function(a, b)
+		local aName = a and a.GetName and a:GetName() or ""
+		local bName = b and b.GetName and b:GetName() or ""
+		return aName:lower() < bName:lower()
+	end)
+	return playlists
+end
+
+local function getCurrentChartKey()
+	local steps = GAMESTATE:GetCurrentSteps()
+	if not steps then return nil end
+	local ok, chartKey = pcall(function() return steps:GetChartKey() end)
+	if ok then
+		return chartKey
+	end
+	return nil
+end
+
+local function findPlaylistByName(name)
+	if not name or name == "" then return nil end
+	for _, playlist in ipairs(getEvalPlaylists()) do
+		if playlist and playlist:GetName() == name then
+			return playlist
+		end
+	end
+	return nil
+end
+
+local function playlistContainsChart(playlist, chartKey)
+	if not playlist or not chartKey then return false, nil end
+	local ok, keys = pcall(function() return playlist:GetChartkeys() end)
+	if not ok or not keys then return false, nil end
+	for i, key in ipairs(keys) do
+		if key == chartKey then
+			return true, i
+		end
+	end
+	return false, nil
+end
+
+local function tryCallMethod(target, methodNames, ...)
+	if not target then return false end
+	for _, methodName in ipairs(methodNames) do
+		local method = target[methodName]
+		if type(method) == "function" then
+			local ok, result = pcall(method, target, ...)
+			if ok then
+				return true, result, methodName
+			end
+		end
+	end
+	return false
+end
+
+local function ensurePlaylistExists(name)
+	local playlist = findPlaylistByName(name)
+	if playlist then
+		return true, playlist
+	end
+	local ok = false
+	ok = tryCallMethod(SONGMAN, {"CreatePlaylist", "AddPlaylist", "MakePlaylist", "NewPlaylist"}, name)
+	if ok then
+		playlist = findPlaylistByName(name)
+	end
+	return playlist ~= nil, playlist
+end
+
+local function addCurrentChartToPlaylist(name)
  	local chartKey = getCurrentChartKey()
  	local song = GAMESTATE:GetCurrentSong()
  	local steps = GAMESTATE:GetCurrentSteps()
@@ -572,10 +595,10 @@ ensureColumnFilter()
 _G.ResetDayEvalGraphSettings = copyTable(evalGraphSettings)
  
 t[#t + 1] = LoadFont("Common Large") .. {
- 	Name = "SongTitleHeader",
- 	InitCommand = function(self)
+	Name = "SongTitleHeader",
+	InitCommand = function(self)
 		self:xy(10, 10):halign(0):valign(0):zoom(0.65):diffuse(color("#FFFFFF"))
-		self:maxwidth(900)
+		self:maxwidth(620)
 		self:settext("")
 	end,
 	OnCommand = function(self)
@@ -589,7 +612,7 @@ t[#t + 1] = LoadFont("Common Large") .. {
 t[#t + 1] = LoadFont("Common Large") .. {
 	Name = "StepInfoHeader",
 	InitCommand = function(self)
-		self:xy(10, 42):halign(0):valign(0):zoom(0.4):maxwidth(760)
+		self:xy(10, 36):halign(0):valign(0):zoom(0.4):maxwidth(620)
 	end,
 	BeginCommand = function(self)
 		self:queuecommand("Set"):diffuse(color("#FFFFFF"))
@@ -602,7 +625,7 @@ t[#t + 1] = LoadFont("Common Large") .. {
 t[#t + 1] = LoadFont("Common Large") .. {
 	Name = "PackCreditHeader",
 	InitCommand = function(self)
-		self:xy(10, 60):halign(0):valign(0):zoom(0.3):maxwidth(900)
+		self:xy(10, 55):halign(0):valign(0):zoom(0.3):maxwidth(620)
 		self:diffuse(color("#FFFFFF"))
 	end,
 	BeginCommand = function(self)
@@ -614,23 +637,9 @@ t[#t + 1] = LoadFont("Common Large") .. {
 }
 
 t[#t + 1] = LoadFont("Common Large") .. {
-	Name = "EvalPlayerName",
-	InitCommand = function(self)
-		self:xy(SCREEN_WIDTH - 10, 8):halign(1):valign(0):zoom(0.4)
-		self:diffuse(getMainColor("positive"))
-	end,
-	BeginCommand = function(self)
-		self:queuecommand("Set")
-	end,
-	SetCommand = function(self)
-		self:settext(" " .. getDisplayName())
-	end
-}
-
-t[#t + 1] = LoadFont("Common Large") .. {
 	Name = "EvalClock",
 	InitCommand = function(self)
-		self:xy(SCREEN_WIDTH - 10, 36):halign(1):valign(0):zoom(0.36)
+		self:xy(SCREEN_WIDTH - 10, 35):halign(1):valign(0):zoom(0.30)
 		self:diffuse(color("#FFFFFF"))
 	end,
 	UpdateCommand = function(self)
@@ -645,7 +654,7 @@ t[#t + 1] = LoadFont("Common Large") .. {
 t[#t + 1] = LoadFont("Common Large") .. {
 	Name = "EvalSessionTime",
 	InitCommand = function(self)
-		self:xy(SCREEN_WIDTH - 10, 58):halign(1):valign(0):zoom(0.28)
+		self:xy(SCREEN_WIDTH - 10, 49):halign(1):valign(0):zoom(0.24)
 		self:diffuse(color("#FFFFFF"))
 	end,
 	UpdateCommand = function(self)
@@ -675,8 +684,10 @@ t[#t + 1] = Def.ActorFrame {
 				self:xy(0, 46):zoomto(100, 24):halign(0):valign(0):diffuse(color("#25d0ff")):diffusealpha(0.35)
 			end,
 			SetCommand = function(self)
-				local grade = getDisplayedGrade(true)
-				self:diffuse(getGradeColor(grade))
+				if not usingCustomWindows then
+					local grade = getDisplayedGrade(true)
+					self:diffuse(getGradeColor(grade))
+				end
 				self:diffusealpha(0.35)
 			end,
 			BeginCommand = function(self) self:queuecommand("Set") end,
@@ -694,6 +705,10 @@ t[#t + 1] = Def.ActorFrame {
 				self:maxwidth(90 / 0.85)
 			end,
 			SetCommand = function(self)
+				if usingCustomWindows then
+					self:settext("")
+					return
+				end
 				local grade = getDisplayedGrade(true)
 				self:settext(getGradeStrings(grade))
 				self:diffuse(getGradeColor(grade))
@@ -723,7 +738,9 @@ t[#t + 1] = Def.ActorFrame {
 			end,
 			SetCommand = function(self)
 				local grade = getDisplayedGrade(true)
-				self:diffuse(getGradeColor(grade))
+				if not usingCustomWindows then
+					self:diffuse(getGradeColor(grade))
+				end
 				self:diffusealpha(0.35)
 			end,
 			BeginCommand = function(self) self:queuecommand("Set") end,
@@ -752,7 +769,9 @@ t[#t + 1] = Def.ActorFrame {
 				local score = getCurrentScore()
 				local grade = getDisplayedGrade(true)
 				self:settext(getDisplayedPercentText(score, true))
-				self:diffuse(getGradeColor(grade))
+				if not usingCustomWindows then
+					self:diffuse(getGradeColor(grade))
+				end
 			end,
 			BeginCommand = function(self) self:queuecommand("Set") end,
 			ScoreChangedMessageCommand = function(self) self:queuecommand("Set") end,
@@ -798,7 +817,9 @@ t[#t + 1] = Def.ActorFrame {
 				self:xy(0, 46):zoomto(165, 24):halign(0):valign(0):diffuse(color("#25d0ff")):diffusealpha(0.35)
 			end,
 			SetCommand = function(self)
-				self:diffuse(getRescoredClearType(judge, 2))
+				if not usingCustomWindows then
+					self:diffuse(getRescoredClearType(judge, 2))
+				end
 				self:diffusealpha(0.35)
 			end,
 			BeginCommand = function(self) self:queuecommand("Set") end,
@@ -817,7 +838,9 @@ t[#t + 1] = Def.ActorFrame {
 			end,
 			SetCommand = function(self)
 				self:settext(getRescoredClearType(judge, 0))
-				self:diffuse(getRescoredClearType(judge, 2))
+				if not usingCustomWindows then
+					self:diffuse(getRescoredClearType(judge, 2))
+				end
 			end,
 			BeginCommand = function(self) self:queuecommand("Set") end,
 			ScoreChangedMessageCommand = function(self) self:queuecommand("Set") end,
@@ -849,6 +872,16 @@ local bw = (plotWidth - (gap * 3)) / 4
 local graphLineModes = {"None", "Combo", "Mean", "SD", "Accuracy", "MA", "PA"}
 local graphLineColors = {"White", "Clear Type", "Grade"}
 local graphHoverModes = {"Cumulative", "Slice"}
+
+local interludeIconTargetSize = 48
+
+local function normalizeInterludeIcon(self, visualScale)
+	local width = self:GetWidth()
+	local height = self:GetHeight()
+	if width > 0 and height > 0 then
+		self:zoom((interludeIconTargetSize / math.max(width, height)) * (visualScale or 1))
+	end
+end
 
 local function setGraphSetting(key, value)
 	if key == "lineMode" and value == "Standard deviation" then
@@ -889,7 +922,8 @@ local function updatePlaylistPage(delta)
 	MESSAGEMAN:Broadcast("EvalOverlayStateChanged", {open = evalOverlayOpen, graphDropdown = evalGraphDropdown, chartActionsMode = evalChartActionsMode})
 end
 
-local function overlayButton(x, label, activeName, mouseDown)
+local function overlayButton(x, label, activeName, mouseDown, icon)
+	local hasIcon = icon ~= nil and icon ~= ""
 	return Def.ActorFrame {
 		InitCommand = function(self) self:xy(x, SCREEN_HEIGHT - 31) end,
 		UIElements.QuadButton(1, 1) .. {
@@ -916,9 +950,23 @@ local function overlayButton(x, label, activeName, mouseDown)
 				end
 			end,
 		},
+		hasIcon and Def.Sprite {
+			Texture = THEME:GetPathG("", "Interlude Icons/" .. icon),
+			InitCommand = function(self)
+				self:xy(16, 12):halign(0.5):valign(0.5):diffuse(color("#FFFFFF"))
+			end,
+			OnCommand = function(self)
+				normalizeInterludeIcon(self, 0.24)
+			end,
+			SetCommand = function(self)
+				local active = activeName ~= nil and evalOverlayOpen == activeName
+				self:diffuse(active and color("#f6d67a") or color("#FFFFFF"))
+			end,
+			EvalOverlayStateChangedMessageCommand = function(self) self:queuecommand("Set") end,
+		} or nil,
 		LoadFont("Common Normal") .. {
 			InitCommand = function(self)
-				self:xy(bw / 2, 12):halign(0.5):valign(0.5):zoom(0.4):settext(label)
+				self:xy(hasIcon and (bw / 2 + 10) or bw / 2, 12):halign(0.5):valign(0.5):zoom(0.4):settext(label)
 				self:diffuse(color("#FFFFFF"))
 			end,
 			SetCommand = function(self)
@@ -944,22 +992,32 @@ local function tickButton(x, y, getter, onClick)
 	return Def.ActorFrame {
 		InitCommand = function(self) self:xy(x, y) end,
 		UIElements.QuadButton(1, 1) .. {
-			InitCommand = function(self)
-				self:zoomto(28, 28):halign(0):valign(0):diffusealpha(0)
-			end,
-			MouseDownCommand = function(self, params)
-				if params.event == "DeviceButton_left mouse button" then
-					onClick()
-				end
-			end,
+			InitCommand = function(self) self:zoomto(20, 20):halign(0):valign(0):diffusealpha(0) end,
+			MouseDownCommand = function(self, params) if params.event == "DeviceButton_left mouse button" then onClick() end end,
 		},
-		LoadFont("Common Large") .. {
+		Def.Sprite {
+			Texture = THEME:GetPathG("", "Interlude Icons/check-solid.png"),
 			InitCommand = function(self)
-				self:xy(14, 14):halign(0.5):valign(0.5):zoom(0.54)
+				self:xy(10, 10):halign(0.5):valign(0.5):diffuse(color("#FFFFFF"))
+			end,
+			OnCommand = function(self)
+				normalizeInterludeIcon(self, 0.18)
 			end,
 			SetCommand = function(self)
-				self:settext(getter() and "✓" or "○")
-				self:diffuse(getter() and color("#FFFFFF") or color("#BBBBBB"))
+				self:visible(getter())
+			end,
+			EvalOverlayStateChangedMessageCommand = function(self) self:queuecommand("Set") end,
+		},
+		Def.Sprite {
+			Texture = THEME:GetPathG("", "Interlude Icons/xmark-solid.png"),
+			InitCommand = function(self)
+				self:xy(10, 10):halign(0.5):valign(0.5):diffuse(color("#BBBBBB"))
+			end,
+			OnCommand = function(self)
+				normalizeInterludeIcon(self, 0.18)
+			end,
+			SetCommand = function(self)
+				self:visible(not getter())
 			end,
 			EvalOverlayStateChangedMessageCommand = function(self) self:queuecommand("Set") end,
 		}
@@ -1129,13 +1187,33 @@ for i = 1, #evalGraphSettings.columnFilter do
 			InitCommand = function(self) self:zoomto(20, 20):halign(0):valign(0):diffusealpha(0) end,
 			MouseDownCommand = function(self, params) if params.event == "DeviceButton_left mouse button" then toggleColumnFilter(i) end end,
 		},
-		LoadFont("Common Large") .. {
-			InitCommand = function(self) self:xy(10, 10):halign(0.5):valign(0.5):zoom(0.42) end,
+		Def.Sprite {
+			Texture = THEME:GetPathG("", "Interlude Icons/check-solid.png"),
+			InitCommand = function(self)
+				self:xy(10, 10):halign(0.5):valign(0.5):diffuse(color("#FFFFFF"))
+			end,
+			OnCommand = function(self)
+				normalizeInterludeIcon(self, 0.18)
+			end,
 			SetCommand = function(self)
 				ensureColumnFilter()
-				self:settext(evalGraphSettings.columnFilter[i] and "✓" or "○")
-				self:diffuse(evalGraphSettings.columnFilter[i] and color("#FFFFFF") or color("#BBBBBB"))
+				self:visible(evalGraphSettings.columnFilter[i])
 			end,
+			EvalOverlayStateChangedMessageCommand = function(self) self:queuecommand("Set") end,
+		},
+		Def.Sprite {
+			Texture = THEME:GetPathG("", "Interlude Icons/xmark-solid.png"),
+			InitCommand = function(self)
+				self:xy(10, 10):halign(0.5):valign(0.5):diffuse(color("#BBBBBB"))
+			end,
+			OnCommand = function(self)
+				normalizeInterludeIcon(self, 0.18)
+			end,
+			SetCommand = function(self)
+				ensureColumnFilter()
+				self:visible(not evalGraphSettings.columnFilter[i])
+			end,
+			EvalOverlayStateChangedMessageCommand = function(self) self:queuecommand("Set") end,
 		}
 	}
 end
@@ -1261,7 +1339,7 @@ t[#t + 1] = Def.ActorFrame {
 		if params.event == "DeviceButton_left mouse button" then
 			setEvalOverlayOpen(evalOverlayOpen == "graph" and nil or "graph")
 		end
-	end),
+	end, "chart-bar-solid.png"),
 	overlayButton(plotStart + bw + gap, "Chart actions", "chartActions", function(self, params)
 		if params.event == "DeviceButton_left mouse button" then
 			setEvalOverlayOpen(evalOverlayOpen == "chartActions" and nil or "chartActions")
@@ -1368,8 +1446,7 @@ t[#t + 1] = Def.ActorFrame {
 	},
 }
 
-
-
+t[#t + 1] = LoadActor("../_PlayerInfo")
 t[#t + 1] = LoadActor("../_cursor")
 
 return t

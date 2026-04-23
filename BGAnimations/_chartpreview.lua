@@ -19,6 +19,14 @@ local translated_info = {
 	BPM = THEME:GetString("ChordDensityGraph", "BPM"),
 }
 
+local function updateMusicRatio()
+	local currentSong = GAMESTATE:GetCurrentSong()
+	local currentSteps = GAMESTATE:GetCurrentSteps()
+	if currentSong and currentSteps then
+		musicratio = (currentSteps:GetFirstSecond() / getCurRateValue() + currentSteps:GetLengthSeconds()) / wodth * getCurRateValue()
+	end
+end
+
 local function UpdatePreviewPos(self)
 	if not self:IsVisible() then return end
 	local scrnm = SCREENMAN:GetTopScreen():GetName()
@@ -62,9 +70,10 @@ local t = Def.ActorFrame {
 		self:GetChild("pausetext"):settext("")
 	end,
 	CurrentStepsChangedMessageCommand = function(self)
-		if GAMESTATE:GetCurrentSong() then
-            musicratio = (GAMESTATE:GetCurrentSteps():GetFirstSecond() / getCurRateValue() + GAMESTATE:GetCurrentSteps():GetLengthSeconds()) / wodth * getCurRateValue()
-		end
+		updateMusicRatio()
+	end,
+	CurrentRateChangedMessageCommand = function(self)
+		updateMusicRatio()
 	end,
     SetupNoteFieldCommand=function(self)
 		self:playcommand("NoteFieldVisible")

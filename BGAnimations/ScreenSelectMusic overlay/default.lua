@@ -3,6 +3,7 @@ local statsOverlayActive = false
 local statsOverlayInputRedirect = false
 local quickMenuActive = false
 local quickMenuInputRedirect = false
+local pendingMenuMusicRestore = false
 local quickMenuPanelX = 34
 local quickMenuPanelY = 50
 local quickMenuPanelWidth = 262
@@ -2530,14 +2531,13 @@ local t = Def.ActorFrame {
 			local wheel = s:GetMusicWheel()
 			if wheel then
 				local restoredSong = MenuMusicState.RestoreToWheel(wheel)
-				if restoredSong and s.setTimeout then
-					s:setTimeout(function()
-						if MenuMusicState and MenuMusicState.RestorePlayback then
-							MenuMusicState.RestorePlayback(s)
-						end
-					end, 0.05)
-				end
+				pendingMenuMusicRestore = restoredSong ~= nil
 			end
+		end
+		local pendingReplayScore = getenv("PendingReplayScoreFromEvaluation")
+		if pendingReplayScore and s and s.PlayReplay then
+			setenv("PendingReplayScoreFromEvaluation", nil)
+			s:PlayReplay(pendingReplayScore)
 		end
 	end
 }
@@ -2568,10 +2568,17 @@ t[#t + 1] = Def.Actor {
 			MenuMusicState.Save(GAMESTATE:GetCurrentSong(), nil)
 		end
 	end,
+	PlayingSampleMusicMessageCommand = function(self)
+		if pendingMenuMusicRestore and MenuMusicState and MenuMusicState.RestorePlayback then
+			MenuMusicState.RestorePlayback(SCREENMAN:GetTopScreen())
+			pendingMenuMusicRestore = false
+		end
+	end,
 	OnCommand = function(self)
 		inScreenSelectMusic = true
 	end,
 	EndCommand = function(self)
+		pendingMenuMusicRestore = false
 		if MenuMusicState and MenuMusicState.CaptureFromTopScreen then
 			MenuMusicState.CaptureFromTopScreen(SCREENMAN:GetTopScreen())
 		end

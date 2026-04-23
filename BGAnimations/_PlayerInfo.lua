@@ -70,6 +70,13 @@ local function isTitleScreen()
 	return top and top.GetName and top:GetName() == "ScreenTitleMenu"
 end
 
+local function isEvaluationScreen()
+	local top = SCREENMAN and SCREENMAN.GetTopScreen and SCREENMAN:GetTopScreen() or nil
+	if not top or not top.GetName then return false end
+	local name = top:GetName()
+	return name == "ScreenEvaluation" or name == "ScreenEvaluationNormal" or name == "ScreenNetEvaluation"
+end
+
 local function performLogout(self)
 	if DLMAN:IsLoggedIn() then
 		local slot = pn_to_profile_slot and pn_to_profile_slot(PLAYER_1) or nil
@@ -191,6 +198,7 @@ t[#t + 1] = Def.Actor {
 t[#t + 1] = Def.ActorFrame {
 	Name = "Avatar" .. PLAYER_1,
 	BeginCommand = function(self)
+		self:draworder(500)
 		self:queuecommand("Set")
 	end,
 	SetCommand = function(self)
@@ -258,7 +266,7 @@ t[#t + 1] = Def.ActorFrame {
 	Def.ActorFrame {
 		Name = "LoginButtonFrame",
 		InitCommand = function(self)
-			self:xy(AvatarX + 22, AvatarY)
+			self:xy(AvatarX + 22, AvatarY):draworder(520)
 		end,
 		BeginCommand = function(self)
 			SCREENMAN:GetTopScreen():AddInputCallback(function(event)
@@ -301,13 +309,25 @@ t[#t + 1] = Def.ActorFrame {
 				self:zoomto(loginButtonWidth, loginButtonHeight):halign(0):valign(0.5):xy(0, 0):diffuse(getMainColor("highlight")):diffusealpha(0.8)
 			end,
 			SetDynamicAccentColorMessageCommand = function(self, params)
-				self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.8)
+				if isEvaluationScreen() then
+					self:finishtweening():linear(0.2):diffuse(getMainColor("highlight")):diffusealpha(0.8)
+				else
+					self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.8)
+				end
 			end
 		},
-		LoadFont("Common Normal") .. {
+		Def.Sprite {
 			Name = "GlobeIcon",
+			Texture = THEME:GetPathG("", "Interlude Icons/globe-solid.png"),
 			InitCommand = function(self)
-				self:xy(6, 0):halign(0):zoom(0.4):settext("🌐"):diffuse(color("#22CC66"))
+				self:xy(16, 0):halign(0.5):valign(0.5):diffuse(color("#22CC66"))
+			end,
+			OnCommand = function(self)
+				local width = self:GetWidth()
+				local height = self:GetHeight()
+				if width > 0 and height > 0 then
+					self:zoom((48 / math.max(width, height)) * 0.4)
+				end
 			end,
 		},
 		UIElements.TextToolTip(1, 1, "Common Normal") .. {
@@ -390,7 +410,7 @@ t[#t + 1] = Def.ActorFrame {
 		Def.ActorFrame {
 			Name = "ProfileMenu",
 			InitCommand = function(self)
-				self:xy(0, 18)
+				self:xy(0, 18):draworder(540)
 			end,
 			SetCommand = function(self)
 				self:visible(profileMenuOpen and DLMAN:IsLoggedIn())
@@ -414,7 +434,11 @@ t[#t + 1] = Def.ActorFrame {
 					self:halign(0):valign(0):zoomto(profileMenuWidth, profileMenuItemHeight * 3):diffuse(getMainColor("highlight")):diffusealpha(0.35)
 				end,
 				SetDynamicAccentColorMessageCommand = function(self, params)
-					self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.35)
+					if isEvaluationScreen() then
+						self:finishtweening():linear(0.2):diffuse(getMainColor("highlight")):diffusealpha(0.35)
+					else
+						self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.35)
+					end
 				end
 			},
 			(function()

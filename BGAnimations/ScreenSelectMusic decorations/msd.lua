@@ -23,6 +23,16 @@ local t = Def.ActorFrame {
 	end,
 }
 
+local interludeIconTargetSize = 48
+
+local function normalizeInterludeIcon(self, visualScale)
+	local width = self:GetWidth()
+	local height = self:GetHeight()
+	if width > 0 and height > 0 then
+		self:zoom((interludeIconTargetSize / math.max(width, height)) * (visualScale or 1))
+	end
+end
+
 local frameX = 20
 local frameWidth = capWideScale(get43size(400), 400)
 -- Leaderboards start at y=103. Information bar spans from y=37 to y=103.
@@ -93,16 +103,30 @@ t[#t + 1] = LoadFont("Common Large") .. {
 }
 
 -- 4. Pack Name
+t[#t + 1] = Def.Sprite {
+	Name = "PackIcon",
+	Texture = THEME:GetPathG("", "Interlude Icons/link-solid.png"),
+	InitCommand = function(self)
+		self:xy(frameX + 18, barY + 12):halign(0.5):valign(0.5):diffuse(color("#CCCCCC"))
+	end,
+	OnCommand = function(self)
+		normalizeInterludeIcon(self, 0.4)
+	end,
+	updateMetaCommand = function(self)
+		self:visible(GAMESTATE:GetCurrentSong() ~= nil)
+	end
+}
+
 t[#t + 1] = LoadFont("Common Normal") .. {
 	InitCommand = function(self)
-		self:xy(frameX + 10, barY + 12):zoom(0.4):halign(0):diffuse(color("#CCCCCC"))
-		self:maxwidth((frameWidth - 20) / 0.4)
+		self:xy(frameX + 34, barY + 12):zoom(0.4):halign(0):diffuse(color("#CCCCCC"))
+		self:maxwidth((frameWidth - 44) / 0.4)
 	end,
 	updateMetaCommand = function(self)
 		local song = GAMESTATE:GetCurrentSong()
 		if song then
 			local group = song:GetGroupName()
-			self:settext("🔗 " .. group)
+			self:settext(group)
 		else
 			self:settext("")
 		end

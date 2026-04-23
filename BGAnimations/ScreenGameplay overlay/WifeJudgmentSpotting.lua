@@ -912,9 +912,12 @@ local p =
 			self:queuecommand("Set")
  		end,
 		BeginCommand = function(self)
-			self:SetUpdateFunction(function(actor)
-				actor:queuecommand("Set")
-			end)
+			self:queuecommand("Update")
+		end,
+		UpdateCommand = function(self)
+			self:queuecommand("Set")
+			self:sleep(0.016)
+			self:queuecommand("Update")
 		end,
 		SetCommand = function(self)
 			local verts = buildRingVerts(getSongProgress(), pieInnerRadius, pieOuterRadius, highlight, pieSegments)

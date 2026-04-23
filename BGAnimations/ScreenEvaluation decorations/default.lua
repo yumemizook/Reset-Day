@@ -411,7 +411,7 @@ end
 
 local function getRecordLabel(recordScore)
 	if not recordScore then return "" end
-	if recordScore == score and score == SCOREMAN:GetMostRecentScore() then
+	if isLivePlay() and recordScore == score and score == SCOREMAN:GetMostRecentScore() then
 		return "New record!"
 	end
 	local recordPercent = recordScore:GetWifeScore() * 100
@@ -662,6 +662,16 @@ local function scoreBoard(pn, position)
 				local meter = score:GetSkillsetSSR("Overall")
 				self:settextf("%5.2f", meter)
 				self:diffuse(byMSD(meter))
+			end,
+		},
+		LoadFont("Common Normal") .. {
+			Name = "EvalVersionDisplay",
+			InitCommand = function(self)
+				self:xy(frameX + frameWidth / 2, frameY + 340)
+				self:zoom(0.3)
+				self:halign(0.5):valign(0)
+				self:settext("Chorus " .. ProductVersion() .. " * etternaonline.com")
+				self:diffuse(color("#FFFFFF"))
 			end,
 		},
 		LoadFont("Common Large") .. {

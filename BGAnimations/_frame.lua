@@ -1,14 +1,23 @@
 local t = Def.ActorFrame {}
-local topFrameHeight = 35
 local bottomFrameHeight = 35
 local borderWidth = 4
 local hoverAlpha = 0.6
 local showVisualizer = themeConfig:get_data().global.ShowVisualizer
 local frameVisualizerColor = color("#FFFFFF")
 local loadingScreen = Var("LoadingScreen") or ""
-local headerButtonHeight = topFrameHeight - 6
 local isTitleFrame = loadingScreen == "ScreenTitleMenu"
 local useEvaluationFrame = loadingScreen == "ScreenEvaluation" or loadingScreen == "ScreenEvaluationNormal" or loadingScreen == "ScreenNetEvaluation"
+local topFrameHeight = useEvaluationFrame and 74 or 35
+local headerButtonHeight = topFrameHeight - 6
+local interludeIconTargetSize = 48
+
+local function normalizeInterludeIcon(self, visualScale)
+	local width = self:GetWidth()
+	local height = self:GetHeight()
+	if width > 0 and height > 0 then
+		self:zoom((interludeIconTargetSize / math.max(width, height)) * (visualScale or 1))
+	end
+end
 
 local function frameVisualizer(y, maxHeight, alpha)
 	local vis = audioVisualizer:new {
@@ -48,8 +57,8 @@ local function getFrameSong()
 end
 
 local function headerButton(x, width, text, icon, cmd)
-	local labelText = (icon ~= "" and (icon .. " " .. text) or text)
-	return Def.ActorFrame {
+	local hasIcon = icon ~= nil and icon ~= ""
+	local button = Def.ActorFrame {
 		InitCommand = function(self)
 			self:xy(x, topFrameHeight / 2)
 		end,
@@ -77,9 +86,20 @@ local function headerButton(x, width, text, icon, cmd)
 				self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.55)
 			end
 		},
-		LoadFont("Common Normal") .. {
+	}
+	if hasIcon then
+		button[#button + 1] = Def.Sprite {
+			Texture = THEME:GetPathG("", "Interlude Icons/" .. icon),
 			InitCommand = function(self)
-				self:xy(10, 0):zoom(0.5):halign(0):settext(labelText)
+				if text ~= "" then
+					self:xy(14, 0)
+				else
+					self:xy(width / 2, 0)
+				end
+				self:halign(0.5):valign(0.5):diffuse(color("#FFFFFF"))
+			end,
+			OnCommand = function(self)
+				normalizeInterludeIcon(self, 0.28)
 			end,
 			MouseOverCommand = function(self) self:diffusealpha(hoverAlpha) end,
 			MouseOutCommand = function(self) self:diffusealpha(1) end,
@@ -89,22 +109,59 @@ local function headerButton(x, width, text, icon, cmd)
 				end
 			end
 		}
-	}
+	end
+	if text ~= "" then
+		button[#button + 1] = LoadFont("Common Normal") .. {
+			InitCommand = function(self)
+				self:xy(hasIcon and 26 or 10, 0):zoom(0.5):halign(0):settext(text)
+			end,
+			MouseOverCommand = function(self) self:diffusealpha(hoverAlpha) end,
+			MouseOutCommand = function(self) self:diffusealpha(1) end,
+			MouseDownCommand = function(self, params)
+				if params.event == "DeviceButton_left mouse button" then
+					cmd()
+				end
+			end
+		}
+	end
+	return button
 end
 
 local function footerButton(x, text, icon, cmd)
-	return UIElements.TextToolTip(1, 1, "Common Normal") .. {
+	local hasIcon = icon ~= nil and icon ~= ""
+	local buttonWidth = hasIcon and 24 or 60
+	return Def.ActorFrame {
 		InitCommand = function(self)
-			self:xy(x, SCREEN_HEIGHT - bottomFrameHeight / 2):zoom(0.45):halign(0)
-			self:settext(icon .. " " .. text)
+			self:xy(x, SCREEN_HEIGHT - bottomFrameHeight / 2)
 		end,
-		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha) end,
-		MouseOutCommand = function(self) self:diffusealpha(1) end,
-		MouseDownCommand = function(self, params)
-			if params.event == "DeviceButton_left mouse button" then
-				cmd()
+		UIElements.QuadButton(1, 1) .. {
+			InitCommand = function(self)
+				self:zoomto(buttonWidth, bottomFrameHeight):halign(0):valign(0.5):diffusealpha(0)
+			end,
+			MouseOverCommand = function(self) self:GetParent():diffusealpha(hoverAlpha) end,
+			MouseOutCommand = function(self) self:GetParent():diffusealpha(1) end,
+			MouseDownCommand = function(self, params)
+				if params.event == "DeviceButton_left mouse button" then
+					cmd()
+				end
 			end
-		end
+		},
+		hasIcon and Def.Sprite {
+			Name = "Icon",
+			Texture = THEME:GetPathG("", "Interlude Icons/" .. icon),
+			InitCommand = function(self)
+				self:xy(12, 0):halign(0.5):valign(0.5):diffuse(color("#FFFFFF"))
+			end,
+			OnCommand = function(self)
+				normalizeInterludeIcon(self, 0.28)
+			end
+		} or nil,
+		text ~= "" and LoadFont("Common Normal") .. {
+			Name = "Label",
+			InitCommand = function(self)
+				self:xy(0, 0):zoom(0.45):halign(0):settext(text)
+			end
+		} or nil
 	}
 end
 
@@ -219,8 +276,8 @@ if not useEvaluationFrame then
 	t[#t + 1] = clippingCover(425, SCREEN_WIDTH - 425) -- Right cover
   
 	-- Header Buttons
-	t[#t + 1] = headerButton(6, 34, "", "≡", function() MESSAGEMAN:Broadcast("ToggleMenu") end)
-	t[#t + 1] = headerButton(50, 114, "Options", "⚙", function() SCREENMAN:SetNewScreen("ScreenOptionsService") end)
+	t[#t + 1] = headerButton(6, 34, "", "list-solid.png", function() MESSAGEMAN:Broadcast("ToggleMenu") end)
+	t[#t + 1] = headerButton(50, 114, "Options", "gear-solid.png", function() SCREENMAN:SetNewScreen("ScreenOptionsService") end)
 	t[#t + 1] = headerButton(178, 114, "Packs", "", function() SCREENMAN:SetNewScreen("ScreenPackDownloader") end)
 	t[#t + 1] = headerButton(306, 108, isTitleFrame and "Wiki" or "Stats", "", function()
 		if isTitleFrame then
@@ -235,7 +292,7 @@ if not useEvaluationFrame then
 	t[#t + 1] = footerButton(10, "Back", "", function() SCREENMAN:GetTopScreen():Cancel() end)
 
 	-- Music Player Controls
-	t[#t + 1] = footerButton(80, "", "|<<", function() 
+	t[#t + 1] = footerButton(80, "", "backward-step-solid.png", function() 
 		if SongHistory and SongHistory.GetPrevious then
 			local prev = SongHistory.GetPrevious()
 			if prev then
@@ -258,21 +315,42 @@ if not useEvaluationFrame then
 		OnCommand = function(self) self:playcommand("MusicHistoryChanged") end
 	}
 
-	local isPaused = false
-	t[#t + 1] = footerButton(110, "", "||", function() 
+	local function isFooterMusicPaused()
+		local top = SCREENMAN:GetTopScreen()
+		if top and top.IsSampleMusicPaused then
+			return top:IsSampleMusicPaused()
+		end
+		if TitleMenuMusicState and TitleMenuMusicState.IsPaused then
+			return TitleMenuMusicState.IsPaused()
+		end
+		return false
+	end
+
+	t[#t + 1] = footerButton(110, "", "pause-solid.png", function() 
 		local top = SCREENMAN:GetTopScreen()
 		if top and top.PauseSampleMusic then
 			top:PauseSampleMusic()
 			MESSAGEMAN:Broadcast("MusicPauseToggled")
+		elseif TitleMenuMusicState and TitleMenuMusicState.TogglePause and TitleMenuMusicState.TogglePause() then
+			MESSAGEMAN:Broadcast("MusicPauseToggled")
 		end
 	end) .. {
+		OnCommand = function(self)
+			self:playcommand("Set")
+		end,
+		SetCommand = function(self)
+			local icon = self:GetChild("Icon")
+			if icon then
+				icon:Load(THEME:GetPathG("", "Interlude Icons/" .. (isFooterMusicPaused() and "play-solid.png" or "pause-solid.png")))
+				normalizeInterludeIcon(icon, 0.28)
+			end
+		end,
 		MusicPauseToggledMessageCommand = function(self)
-			isPaused = not isPaused
-			self:settext(isPaused and "" or "||")
+			self:playcommand("Set")
 		end
 	}
 
-	t[#t + 1] = footerButton(135, "", ">>|", function() 
+	t[#t + 1] = footerButton(135, "", "forward-step-solid.png", function() 
 		if SelectRandomSong then
 			SelectRandomSong()
 		end

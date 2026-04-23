@@ -10,6 +10,7 @@ local titleMusicLoopToken = 0
 local titleMusicSong = nil
 local titleMusicStartPosition = 0
 local titleMusicStartedAt = nil
+local titleMusicPaused = false
 local titleQuote = getRandomQuotes and getRandomQuotes(3) or ""
 
 local function getTitleMenuSong()
@@ -38,6 +39,7 @@ local function getSavedSamplePosition(song)
 	local saved = MenuMusicState and MenuMusicState.LoadSavedPosition and MenuMusicState.LoadSavedPosition() or 0
 	local length = song:MusicLengthSeconds() or 0
 	if length <= 0 then return 0 end
+	if saved >= length then return 0 end
 	return math.max(0, math.min(saved, length))
 end
 
@@ -86,9 +88,13 @@ local function playTitleMusic(song, startPosition)
 	local length = song:MusicLengthSeconds() or 0
 	if not musicPath or musicPath == "" or length <= 0 then return end
 	startPosition = math.max(0, math.min(startPosition or 0, length))
+	if startPosition >= length then
+		startPosition = 0
+	end
 	titleMusicSong = song
 	titleMusicStartPosition = startPosition
 	titleMusicStartedAt = os.clock()
+	titleMusicPaused = false
 	local token = titleMusicLoopToken
 	SOUND:StopMusic()
 	SOUND:PlayMusicPart(musicPath, startPosition, math.max(length - startPosition, 0))
@@ -106,6 +112,24 @@ local function playTitleMusic(song, startPosition)
 		end, math.max(length - startPosition, 0))
 	end
 end
+
+TitleMenuMusicState = {
+	TogglePause = function()
+		local song = titleMusicSong or getTitleMenuSong()
+		if not song then return false end
+		if titleMusicPaused then
+			playTitleMusic(song, getCurrentTitlePlaybackPosition())
+		else
+			stopTitleMusicLoop()
+			SOUND:StopMusic()
+			titleMusicPaused = true
+		end
+		return true
+	end,
+	IsPaused = function()
+		return titleMusicPaused
+	end,
+}
 
 local function applyMetricChoice(choiceMetricName)
 	GAMESTATE:ApplyGameCommand(THEME:GetMetric("ScreenTitleMenu", choiceMetricName))
@@ -212,9 +236,28 @@ t[#t + 1] = Def.ActorFrame {
 		end
 	},
 	LoadFont("Common Large") .. {
+		Name = "QuoteText",
 		InitCommand = function(self)
 			self:zoom(0.48):maxwidth(1180):settext(titleQuote)
 			self:diffuse(color("#FFFFFF"))
+		end,
+		SetCommand = function(self)
+			local parent = self:GetParent()
+			local currentSong = getTitleMenuSong()
+			local lastSong = parent and parent.GetAttribute and parent:GetAttribute("LastQuoteSong") or nil
+			if currentSong ~= lastSong then
+				titleQuote = getRandomQuotes and getRandomQuotes(3) or ""
+				if parent and parent.SetAttribute then
+					parent:SetAttribute("LastQuoteSong", currentSong)
+				end
+			end
+			self:settext(titleQuote)
+		end,
+		BeginCommand = function(self)
+			self:playcommand("Set")
+		end,
+		MenuMusicStateChangedMessageCommand = function(self)
+			self:playcommand("Set")
 		end
 	}
 }
@@ -323,20 +366,23 @@ t[#t + 1] = Def.ActorFrame {
 	BeginCommand = function(self)
 		local song = getTitleMenuSong()
 		if song then
+			local startPosition = getSavedSamplePosition(song)
 			if MenuMusicState and MenuMusicState.Save then
-				MenuMusicState.Save(song, 0, true)
+				MenuMusicState.Save(song, startPosition, true)
 			end
-			playTitleMusic(song, 0)
+			playTitleMusic(song, startPosition)
 		end
 	end,
 	EndCommand = function(self)
+		TitleMenuMusicState = nil
 		stopTitleMusicLoop()
 	end,
 	MenuMusicStateChangedMessageCommand = function(self)
 		local song = getTitleMenuSong()
 		if song and (song ~= titleMusicSong or not titleMusicStartedAt) then
+			local startPosition = getSavedSamplePosition(song)
 			stopTitleMusicLoop()
-			playTitleMusic(song, 0)
+			playTitleMusic(song, startPosition)
 		end
 	end,
 	InitCommand = function(self)

@@ -24,6 +24,10 @@ local shouldPlayMusic = false
 local prevtab = 0
 local ctags = {}
 local previewLoopToken = 0
+local pendingPreviewSeekPosition = nil
+local pendingPreviewSeekSong = nil
+
+local interludeIconTargetSize = 48
 
 local itsOn = false
 
@@ -42,6 +46,22 @@ local translated_info = {
 
 local function stopPreviewLoop()
 	previewLoopToken = previewLoopToken + 1
+	pendingPreviewSeekPosition = nil
+	pendingPreviewSeekSong = nil
+end
+
+local function applyPendingPreviewSeek()
+	local top = SCREENMAN:GetTopScreen()
+	if not top or not top.SetSampleMusicPosition then return end
+	if pendingPreviewSeekPosition == nil then return end
+	if pendingPreviewSeekSong and GAMESTATE:GetCurrentSong() ~= pendingPreviewSeekSong then
+		pendingPreviewSeekPosition = nil
+		pendingPreviewSeekSong = nil
+		return
+	end
+	top:SetSampleMusicPosition(pendingPreviewSeekPosition)
+	pendingPreviewSeekPosition = nil
+	pendingPreviewSeekSong = nil
 end
 
 local function getPreviewStartSeconds(song)
@@ -92,17 +112,27 @@ local function schedulePreviewLoop(song, token, delay, restartAtBeginning)
 	end, delay)
 end
 
--- to reduce repetitive code for setting preview music position with booleans
-local function playMusicForPreview(song)
+local function playMusicForPreview(song, startSeconds)
 	stopPreviewLoop()
-	local token = previewLoopToken
-	local initialDelay = playPreviewMusicPart(song, getPreviewStartSeconds(song))
-	if initialDelay > 0 then
-		schedulePreviewLoop(song, token, initialDelay, true)
-	else
+	if type(startSeconds) ~= "number" then
+		startSeconds = getPreviewStartSeconds(song)
+	end
+	local top = SCREENMAN:GetTopScreen()
+	if top and top.PlayCurrentSongSampleMusic then
 		SOUND:StopMusic()
-		SCREENMAN:GetTopScreen():PlayCurrentSongSampleMusic(true, true)
+		pendingPreviewSeekPosition = startSeconds
+		pendingPreviewSeekSong = song
+		top:PlayCurrentSongSampleMusic(true, true)
 		MESSAGEMAN:Broadcast("PreviewMusicStarted")
+	else
+		local token = previewLoopToken
+		local initialDelay = playPreviewMusicPart(song, startSeconds)
+		if initialDelay > 0 then
+			schedulePreviewLoop(song, token, initialDelay, true)
+		else
+			SOUND:StopMusic()
+			MESSAGEMAN:Broadcast("PreviewMusicStarted")
+		end
 	end
 
 	restartedMusic = true
@@ -126,6 +156,14 @@ end
 
 local hoverAlpha = 0.8
 local hoverAlpha2 = 0.6
+
+local function normalizeInterludeIcon(self, visualScale)
+	local width = self:GetWidth()
+	local height = self:GetHeight()
+	if width > 0 and height > 0 then
+		self:zoom((interludeIconTargetSize / math.max(width, height)) * (visualScale or 1))
+	end
+end
 
 -- to reduce repetitive code for setting preview visibility with booleans
 local function setPreviewPartsState(state)
@@ -511,7 +549,16 @@ local t = Def.ActorFrame {
 	end,
 	PlayingSampleMusicMessageCommand = function(self)
 		-- delay setting the music for preview up until after the sample music starts (smoothness)
-		if shouldPlayMusic then
+		if pendingPreviewSeekPosition ~= nil then
+			local top = SCREENMAN:GetTopScreen()
+			if top and top.setTimeout then
+				top:setTimeout(function()
+					applyPendingPreviewSeek()
+				end, 0.01)
+			else
+				applyPendingPreviewSeek()
+			end
+		elseif shouldPlayMusic then
 			shouldPlayMusic = false
 			local s = GAMESTATE:GetCurrentSong()
 			if s then
@@ -621,6 +668,9 @@ local t = Def.ActorFrame {
 			end
 			mintyFreshIntervalFunction = nil
 		end
+		pendingPreviewSeekPosition = nil
+		pendingPreviewSeekSong = nil
+		shouldPlayMusic = false
 		self:playcommand("MintyFresh")
 	end,
 }
@@ -629,7 +679,7 @@ local breakdown
 local primarySkill
 
 -- State update helper (crucial for InfoDisplayPanel)
-t[#t + 1] = Def.Actor {
+t[#t + 1] = Def.ActorFrame {
 	MintyFreshCommand = function(self)
 		song = GAMESTATE:GetCurrentSong()
 		if song then
@@ -873,11 +923,14 @@ t[#t + 1] = Def.ActorFrame {
 		}
 
 		-- Note Icon
-		f[#f+1] = LoadFont("Common Large") .. {
+		f[#f+1] = Def.Sprite {
+			Texture = THEME:GetPathG("", "Interlude Icons/music-solid.png"),
 			InitCommand = function(self)
-				self:xy(frameWidth/2 - 20, icY):zoom(0.4):halign(1):valign(0.5):diffuse(color("#FFFFFF"))
-				self:settext("♪")
-			end
+				self:xy(frameWidth/2 - 20, icY):halign(0.5):valign(0.5):diffuse(color("#FFFFFF"))
+			end,
+			OnCommand = function(self)
+				normalizeInterludeIcon(self, 0.4)
+			end,
 		}
 		-- BPM
 		f[#f+1] = LoadFont("Common Large") .. {
@@ -902,11 +955,14 @@ t[#t + 1] = Def.ActorFrame {
 		}
 
 		-- Clock Icon
-		f[#f+1] = LoadFont("Common Large") .. {
+		f[#f+1] = Def.Sprite {
+			Texture = THEME:GetPathG("", "Interlude Icons/stopwatch-solid.png"),
 			InitCommand = function(self)
-				self:xy(frameWidth - 45, icY):zoom(0.4):halign(1):valign(0.5):diffuse(color("#FFFFFF"))
-				self:settext("⏱")
-			end
+				self:xy(frameWidth - 45, icY):halign(0.5):valign(0.5):diffuse(color("#FFFFFF"))
+			end,
+			OnCommand = function(self)
+				normalizeInterludeIcon(self, 0.4)
+			end,
 		}
 		-- Duration
 		f[#f+1] = LoadFont("Common Large") .. {
@@ -926,8 +982,6 @@ t[#t + 1] = Def.ActorFrame {
 		return f
 	end)()
 }
-
-
 
 local enabledC = "#099948"
 local disabledC = "#ff6666"
@@ -1219,14 +1273,47 @@ end
 t[#t + 1] = Def.ActorFrame {
 	Name = "LittleButtonsOnTheLeft",
 
+	Def.Sprite {
+		Name = "PreviewViewerIcon",
+		Texture = THEME:GetPathG("", "Interlude Icons/eye-solid.png"),
+		InitCommand = function(self)
+			self:xy(24, SCREEN_BOTTOM - 58):halign(0.5):valign(0.5):diffuse(getMainColor("positive"))
+		end,
+		OnCommand = function(self)
+			normalizeInterludeIcon(self, 0.4)
+		end,
+		MouseDownCommand = function(self, params)
+			if params.event == "DeviceButton_left mouse button" and (song or noteField) then
+				toggleNoteField()
+			elseif params.event == "DeviceButton_right mouse button" and (song or noteField) then
+				if mcbootlarder:IsVisible() then
+					toggleCalcInfo(not infoOnScreen)
+				else
+					if toggleNoteField() then
+						toggleCalcInfo(true)
+					end
+				end
+			end
+		end,
+		MouseOverCommand = function(self)
+			self:diffusealpha(hoverAlpha2)
+		end,
+		MouseOutCommand = function(self)
+			self:diffusealpha(1)
+		end,
+		MintyFreshCommand = function(self)
+			self:visible(song ~= nil)
+		end,
+	},
+
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		Name = "PreviewViewer",
 		BeginCommand = function(self)
 			mcbootlarder = self:GetParent():GetParent():GetChild("ChartPreview")
 			SCREENMAN:GetTopScreen():AddInputCallback(MPinput)
 			SCREENMAN:GetTopScreen():AddInputCallback(ihatestickinginputcallbackseverywhere)
-			self:xy(60, SCREEN_BOTTOM - 58):zoom(0.5):halign(0.5)
-			self:settext("👁 Preview")
+			self:xy(72, SCREEN_BOTTOM - 58):zoom(0.5):halign(0.5)
+			self:settext("Preview")
 			self:diffuse(getMainColor("positive"))
 		end,
 		MouseDownCommand = function(self, params)
@@ -1242,6 +1329,8 @@ t[#t + 1] = Def.ActorFrame {
 				end
 			end
 		end,
+		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha2) end,
+		MouseOutCommand = function(self) self:diffusealpha(1) end,
 		ChartPreviewOnMessageCommand = function(self)
 			local ready = self:GetParent():GetParent():GetChild("Ready")
 			local force = self:GetParent():GetParent():GetChild("ForceStart")
@@ -1264,12 +1353,6 @@ t[#t + 1] = Def.ActorFrame {
 				end
 			end
 		end,
-		MouseOverCommand = function(self)
-			self:diffusealpha(hoverAlpha2)
-		end,
-		MouseOutCommand = function(self)
-			self:diffusealpha(1)
-		end,
 		MintyFreshCommand = function(self)
 			if song then
 				self:settext(translated_info["TogglePreview"])
@@ -1279,11 +1362,29 @@ t[#t + 1] = Def.ActorFrame {
 		end,
 	},
 
+	Def.Sprite {
+		Name = "PlayerOptionsIcon",
+		Texture = THEME:GetPathG("", "Interlude Icons/bolt-solid.png"),
+		InitCommand = function(self)
+			self:xy(188, SCREEN_BOTTOM - 58):halign(0.5):valign(0.5):diffuse(getMainColor("positive"))
+		end,
+		OnCommand = function(self)
+			normalizeInterludeIcon(self, 0.4)
+		end,
+		MouseDownCommand = function(self, params)
+			if params.event == "DeviceButton_left mouse button" and song then
+				SCREENMAN:GetTopScreen():OpenOptions()
+			end
+		end,
+		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha2) end,
+		MouseOutCommand = function(self) self:diffusealpha(1) end,
+	},
+
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		Name = "PlayerOptionsButton",
 		BeginCommand = function(self)
-			self:xy(220, SCREEN_BOTTOM - 58):halign(0.5):zoom(0.5)
-			self:settext("⚡ Mods")
+			self:xy(232, SCREEN_BOTTOM - 58):halign(0.5):zoom(0.5)
+			self:settext("Mods")
 			self:diffuse(getMainColor("positive"))
 		end,
 		MouseOverCommand = function(self)
@@ -1408,8 +1509,8 @@ t[#t + 1] = Def.ActorFrame {
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		Name = "CollectionButton",
 		BeginCommand = function(self)
-			self:xy(SCREEN_WIDTH - 280, SCREEN_BOTTOM - 58):halign(1):zoom(0.5)
-			self:settext("☰ Collection")
+			self:xy(SCREEN_WIDTH - 262, SCREEN_BOTTOM - 58):halign(1):zoom(0.5)
+			self:settext("Collection")
 			self:diffuse(getMainColor("positive"))
 		end,
 		MouseDownCommand = function(self, params)
@@ -1421,11 +1522,47 @@ t[#t + 1] = Def.ActorFrame {
 		MouseOutCommand = function(self) self:diffusealpha(1) end,
 	},
 
+	Def.Sprite {
+		Name = "CollectionIcon",
+		Texture = THEME:GetPathG("", "Interlude Icons/list-solid.png"),
+		InitCommand = function(self)
+			self:xy(SCREEN_WIDTH - 360, SCREEN_BOTTOM - 58):halign(0.5):valign(0.5):diffuse(getMainColor("positive"))
+		end,
+		OnCommand = function(self)
+			normalizeInterludeIcon(self, 0.4)
+		end,
+		MouseDownCommand = function(self, params)
+			if params.event == "DeviceButton_left mouse button" then
+				openCollectionTab()
+			end
+		end,
+		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha2) end,
+		MouseOutCommand = function(self) self:diffusealpha(1) end,
+	},
+
+	Def.Sprite {
+		Name = "RandomIcon",
+		Texture = THEME:GetPathG("", "Interlude Icons/shuffle-solid.png"),
+		InitCommand = function(self)
+			self:xy(SCREEN_WIDTH - 250, SCREEN_BOTTOM - 58):halign(0.5):valign(0.5):diffuse(getMainColor("positive"))
+		end,
+		OnCommand = function(self)
+			normalizeInterludeIcon(self, 0.4)
+		end,
+		MouseDownCommand = function(self, params)
+			if params.event == "DeviceButton_left mouse button" and SelectRandomSong then
+				SelectRandomSong()
+			end
+		end,
+		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha2) end,
+		MouseOutCommand = function(self) self:diffusealpha(1) end,
+	},
+
 	UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		Name = "RandomButton",
 		BeginCommand = function(self)
-			self:xy(SCREEN_WIDTH - 180, SCREEN_BOTTOM - 58):halign(1):zoom(0.5)
-			self:settext("↻ Random")
+			self:xy(SCREEN_WIDTH - 162, SCREEN_BOTTOM - 58):halign(1):zoom(0.5)
+			self:settext("Random")
 			self:diffuse(getMainColor("positive"))
 		end,
 		MouseDownCommand = function(self, params)
@@ -1473,21 +1610,7 @@ t[#t + 1] = Def.ActorFrame {
 	},
 
 
---[[ -- This is the Widget Button alternative of the above implementation.
-t[#t + 1] =
-	Widg.Button {
-	text = "Options",
-	width = 50,
-	height = 25,
-	border = false,
-	bgColor = BoostColor(getMainColor("frames"), 7.5),
-	highlight = {color = BoostColor(getMainColor("frames"), 10)},
-	x = SCREEN_WIDTH / 2,
-	y = 5,
-	onClick = function(self)
-		SCREENMAN:GetTopScreen():OpenOptions()
-	end
-}]]
+
 }
 
 t[#t + 1] = LoadActorWithParams("../_chartpreview.lua", {yPos = prevY, yPosReverse = prevrevY})

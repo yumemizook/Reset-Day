@@ -4,6 +4,25 @@ local whee
 local lastsearchstring = ""
 local instantSearch = themeConfig:get_data().global.InstantSearch
 
+local interludeIconTargetSize = 48
+
+local function normalizeInterludeIcon(self)
+	local width = self:GetWidth()
+	local height = self:GetHeight()
+	if width > 0 and height > 0 then
+		self:zoom(interludeIconTargetSize / math.max(width, height))
+	end
+end
+
+local function getSearchDisplayState()
+	if active then
+		return searchstring .. "_", color("#00FF00")
+	elseif searchstring ~= "" then
+		return searchstring, color("#FFFFFF")
+	end
+	return "Press Tab to search", color("#888888")
+end
+
 local function searchInput(event)
 	if event.type == "InputEventType_FirstPress" and event.DeviceInput.button == "DeviceButton_tab" then
 		active = not active
@@ -73,21 +92,36 @@ local t = Def.ActorFrame {
 			self:finishtweening():linear(0.2):diffuse(params.color):diffusealpha(0.3)
 		end
 	},
+	Def.ActorFrame {
+		InitCommand = function(self)
+			self:xy(SCREEN_WIDTH - 392, 70):zoom(0.45)
+		end,
+		Def.Sprite {
+			Texture = THEME:GetPathG("", "Interlude Icons/magnifying-glass-solid.png"),
+			InitCommand = function(self)
+				self:halign(0.5):valign(0.5)
+			end,
+			OnCommand = function(self)
+				normalizeInterludeIcon(self)
+				self:playcommand("UpdateState")
+			end,
+			UpdateStringMessageCommand = function(self)
+				self:playcommand("UpdateState")
+			end,
+			UpdateStateCommand = function(self)
+				local _, iconColor = getSearchDisplayState()
+				self:diffuse(iconColor)
+			end
+		}
+	},
 	LoadFont("Common Normal") .. {
 		InitCommand = function(self)
-			self:xy(SCREEN_WIDTH - 405, 70):zoom(0.4):halign(0)
+			self:xy(SCREEN_WIDTH - 375, 70):zoom(0.4):halign(0)
 		end,
 		UpdateStringMessageCommand = function(self)
-			if active then
-				self:settext("🔍 " .. searchstring .. "_")
-				self:diffuse(color("#00FF00"))
-			elseif searchstring ~= "" then
-				self:settext("🔍 " .. searchstring)
-				self:diffuse(color("#FFFFFF"))
-			else
-				self:settext("🔍 Press Tab to search")
-				self:diffuse(color("#888888"))
-			end
+			local displayText, textColor = getSearchDisplayState()
+			self:settext(displayText)
+			self:diffuse(textColor)
 		end,
 		BeginCommand = function(self)
 			self:playcommand("UpdateString")
