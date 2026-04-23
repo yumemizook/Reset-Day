@@ -463,7 +463,7 @@ local l = Def.ActorFrame {
 				-- Row Background
 				Def.Quad {
 					InitCommand = function(self)
-						self:zoomto(frameWidth - 10, 24):halign(0):diffuse(color("#000000")):diffusealpha(0.2)
+						self:zoomto(frameWidth - 15, 24):halign(0):diffuse(color("#000000")):diffusealpha(0.2)
 					end,
 				},
 					DisplayCommand = function(self)
@@ -483,7 +483,7 @@ local l = Def.ActorFrame {
 				-- Date
 				LoadFont("Common Normal") .. {
 					InitCommand = function(self)
-						self:zoom(fontScale):halign(0)
+						self:zoom(fontScale):halign(0):x(5)
 					end,
 					SetScoreCommand = function(self)
 						self:settext(getRelativeTime(score:GetDate()))
@@ -535,7 +535,7 @@ local l = Def.ActorFrame {
 				-- Rate
 				LoadFont("Common Normal") .. {
 					InitCommand = function(self)
-						self:x(frameWidth * 0.93):zoom(fontScale):halign(0.5)
+						self:x(frameWidth * 0.94):zoom(fontScale):halign(1)
 					end,
 					SetScoreCommand = function(self)
 						self:settextf("%.2fx", score:GetMusicRate())
@@ -544,7 +544,7 @@ local l = Def.ActorFrame {
 				-- Clickable background to trigger Eval Screen
 				UIElements.QuadButton(1, 1) .. {
 					InitCommand = function(self)
-						self:xy(130, 0):zoomto(300, 19.6):diffusealpha(0)
+						self:xy(2, 0):zoomto(frameWidth - 20, 19.6):diffusealpha(0):halign(0)
 					end,
 					MouseOverCommand = function(self)
 						if score then self:finishtweening():diffusealpha(0.1) end
@@ -573,15 +573,15 @@ t[#t + 1] = l
 t[#t + 1] = Def.Quad {
 	Name = "ScrollBar",
 	InitCommand = function(self)
-		self:x(frameWidth):zoomto(4, 0):halign(1):valign(1):diffuse(getMainColor("highlight")):diffusealpha(0.75)
+		self:x(frameWidth):zoomto(4, 0):halign(1):valign(0):diffuse(getMainColor("highlight")):diffusealpha(0.75)
 	end,
 	DisplayCommand = function(self)
 		self:finishtweening()
 		self:smooth(0.15)
 		local currentRateScores = getCurrentRateScores()
 		if currentRateScores ~= nil then
-			self:zoomy(((frameHeight - offsetY - 30) / #currentRateScores) * 5)
-			self:y((((frameHeight - offsetY - 30) / #currentRateScores) * scoreOffset) + offsetY + 30)
+			self:zoomy(clamp(((frameHeight / #currentRateScores) * 5) - 30, 0, frameHeight - 30))
+			self:y((((frameHeight) / #currentRateScores) * scoreOffset) + 30)
 		else
 			self:zoomy(0)
 		end

@@ -86,14 +86,15 @@ end
 
 -- Layout properties
 local boxW   = 50
-local boxH   = 32
-local boxGap = 4
-local gradeX = -boxW - boxGap/2
+local boxH   = 31
+local boxGap = 2
+local gradeX =  boxW + boxGap
 local clearX =  boxGap/2
 
 return Def.ActorFrame {
 
 	InitCommand = function(self)
+		self:y(0.5)
 		self.slotDifficulty = "Medium"
 		self.slotSong = nil
 		self.slotMirror = false
@@ -229,7 +230,7 @@ return Def.ActorFrame {
 	-- ═══ INDICATORS ═════════════════════════════════════════════════════════
 	Def.Quad {
 		InitCommand = function(self)
-			self:xy(-boxW - boxGap/2 - 4, -2):zoomto(3, boxH):halign(0.5):valign(0.5)
+			self:xy((boxW/2 * -1) + 22, -2):zoomto(3, boxH):halign(0.5):valign(0.5)
 		end,
 		RedrawCommand = function(self, data)
 			if data.grade ~= "Grade_None" and data.grade ~= "Grade_Tier17" then

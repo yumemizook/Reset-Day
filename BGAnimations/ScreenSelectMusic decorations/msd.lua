@@ -55,8 +55,9 @@ t[#t + 1] = Def.Sprite {
 		
 		if bnpath then
 			self:visible(true)
-			self:LoadBackground(bnpath)
 			self:scaletoclipped(frameWidth, barHeight)
+			self:LoadBackground(bnpath)
+			
 			
 			if self:GetTexture() then
 				local dominant = self:GetTexture():GetAverageColor(14)

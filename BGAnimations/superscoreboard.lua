@@ -27,7 +27,7 @@ local dwidth = width - offx * 2
 local height = 196
 local currentAccentColor = nil
 
-local pdh = 28
+local pdh = 33.5 -- i heart to align things using floats -ifwas
 local packspaceY = pdh
 local tzoom = 0.6 -- increased for larger score cards
 
@@ -601,7 +601,7 @@ local function makeScoreDisplay(i)
 		-- Line 1: #Rank Username · Score% (Left)
 		LoadFont("Common normal") .. {
 			InitCommand = function(self)
-				self:x(10):zoom(tzoom + 0.1):halign(0):valign(1):y(-1)
+				self:x(10):zoom(tzoom - 0.1):halign(0):valign(1):y(-1)
 			end,
 			DisplayCommand = function(self)
 				local perc = hs:GetWifeScore() * 100
@@ -613,7 +613,7 @@ local function makeScoreDisplay(i)
 		-- Line 2: ClearType · Notes · SSR (Left)
 		LoadFont("Common normal") .. {
 			InitCommand = function(self)
-				self:x(10):zoom(tzoom - 0.05):halign(0):valign(0):y(1)
+				self:x(10):zoom(tzoom - 0.1):halign(0):valign(0):y(1)
 			end,
 			DisplayCommand = function(self)
 				local clearText = getClearTypeFromScore(PLAYER_1, hs, 0)
@@ -633,7 +633,7 @@ local function makeScoreDisplay(i)
 		-- Rate (Top Right)
 		LoadFont("Common normal") .. {
 			InitCommand = function(self)
-				self:x(width - 10):zoom(tzoom):halign(1):valign(1):y(-1)
+				self:x(width - 10):zoom(tzoom - 0.05):halign(1):valign(1):y(-1)
 			end,
 			DisplayCommand = function(self)
 				local rate = hs:GetMusicRate()
@@ -648,7 +648,7 @@ local function makeScoreDisplay(i)
 		-- Time (Bottom Right)
 		LoadFont("Common normal") .. {
 			InitCommand = function(self)
-				self:x(width - 10):zoom(tzoom - 0.05):halign(1):valign(0):y(1)
+				self:x(width - 10):zoom(tzoom - 0.07):halign(1):valign(0):y(1)
 			end,
 			DisplayCommand = function(self)
 				self:settext(getRelativeTime(hs:GetDate()))
