@@ -211,7 +211,7 @@ local function npsDisplay(pn)
 		Def.ActorFrame {
 		Name = "NPSDisplay",
 		InitCommand = function(self)
-			self:xy(MovableValues.NPSDisplayX, MovableValues.NPSDisplayY):zoom(MovableValues.NPSDisplayZoom)
+			self:xy(SCREEN_CENTER_X + 160, SCREEN_BOTTOM - 180):zoom(MovableValues.NPSDisplayZoom)
 			if allowedCustomization then
 				Movable.DeviceButton_y.element = self
 				Movable.DeviceButton_u.element = self

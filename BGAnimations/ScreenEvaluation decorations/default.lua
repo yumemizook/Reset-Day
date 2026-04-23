@@ -184,10 +184,7 @@ end
 
 local function getDisplayedWifePercentText()
 	local percent = getDisplayedWifePercent()
-	if percent > 99 then
-		return string.format("%05.4f%%", notShit.floor(percent, 4))
-	end
-	return string.format("%05.2f%%", notShit.floor(percent, 2))
+	return string.format("%06.3f%%", percent)
 end
 
 local function getDisplayedJudgeLabel()

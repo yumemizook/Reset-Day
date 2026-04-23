@@ -194,10 +194,7 @@ local function getDisplayedPercentText(score, useRescored)
 	else
 		percent = score:GetWifeScore() * 100
 	end
-	if percent > 99 then
-		return string.format("%05.4f%%", percent)
-	end
-	return string.format("%05.2f%%", percent)
+	return string.format("%06.3f%%", percent)
 end
 
 local function getDisplayedGrade(useRescored)

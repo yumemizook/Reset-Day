@@ -157,7 +157,8 @@ function getLaneCoverColor(type)
 end
 
 function getGradeColor(grade)
-	return color(colorConfig:get_data().grades[grade]) or color(colorConfig:get_data().grades["Grade_None"])
+	local data = colorConfig:get_data().grades
+	return color(data[grade] or data["Grade_None"])
 end
 
 function getDifficultyColor(diff)
@@ -246,7 +247,8 @@ end
 
 -- i guess if i'm going to use this naming convention it might as well be complete and standardized which means redundancy -mina
 function byGrade(grade)
-	return color(colorConfig:get_data().grades[grade]) or color(colorConfig:get_data().grades["Grade_None"])
+	local data = colorConfig:get_data().grades
+	return color(data[grade] or data["Grade_None"])
 end
 
 -- Colorized stuff

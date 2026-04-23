@@ -26,9 +26,10 @@ local jdgT = {
 local dvCur
 local jdgCur  -- Note: only for judgments with OFFSETS, might reorganize a bit later
 local tDiff
-local wifey
+local wifey = 0
 local curMeanSum = 0
 local curMeanCount = 0
+local curGrade = "Grade_None"
 local judgect
 local pbtarget
 local positive = getMainColor("positive")
@@ -252,7 +253,28 @@ local t =
 	end,
 	JudgmentMessageCommand = function(self, msg)
 		tDiff = msg.WifeDifferential
-		wifey = Floor(msg.WifePercent * 100) / 100
+		wifey = msg.WifePercent
+
+		-- Manual grade calculation to avoid engine sync issues
+		local function getGradeFromPercent(p)
+			if p >= 99.9935 then return "Grade_Tier01" end
+			if p >= 99.98 then return "Grade_Tier02" end
+			if p >= 99.97 then return "Grade_Tier03" end
+			if p >= 99.955 then return "Grade_Tier04" end
+			if p >= 99.90 then return "Grade_Tier05" end
+			if p >= 99.80 then return "Grade_Tier06" end
+			if p >= 99.70 then return "Grade_Tier07" end
+			if p >= 99.00 then return "Grade_Tier08" end
+			if p >= 96.50 then return "Grade_Tier09" end
+			if p >= 93.00 then return "Grade_Tier10" end
+			if p >= 90.00 then return "Grade_Tier11" end
+			if p >= 85.00 then return "Grade_Tier12" end
+			if p >= 80.00 then return "Grade_Tier13" end
+			if p >= 70.00 then return "Grade_Tier14" end
+			if p >= 60.00 then return "Grade_Tier15" end
+			return "Grade_Tier16"
+		end
+		curGrade = getGradeFromPercent(wifey)
 		jdgct = msg.Val
 		if msg.Offset ~= nil then
 			dvCur = msg.Offset
@@ -432,7 +454,8 @@ local cp =
 				self:settextf("%05.2f%%", 0)
 			end,
 			SpottedOffsetCommand = function(self)
-				self:settextf("%05.2f%%", wifey)
+				self:settextf("%06.3f%%", wifey)
+				self:diffuse(getGradeColor(curGrade))
 			end
 		},
 	LoadFont("Common Normal") ..
@@ -523,7 +546,22 @@ local frameHeight = ((#jdgT + 1) * spacing) -- Height of the Frame
 local judgeFontSize = 0.40 -- Font sizes for different text elements
 local countFontSize = 0.35
 local gradeFontSize = 0.45
+local maFontSize = 0.35
 --==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--==--
+
+local function getMARatio()
+	local ok, stats = pcall(function() return STATSMAN:GetCurStageStats() end)
+	if ok and stats and stats.GetPlayerStageStats then
+		local ok2, pss = pcall(function() return stats:GetPlayerStageStats(PLAYER_1) end)
+		if ok2 and pss and pss.GetTapNoteScore then
+			local w1 = pss:GetTapNoteScore("TapNoteScore_W1") or 0
+			local w2 = pss:GetTapNoteScore("TapNoteScore_W2") or 0
+			if w2 == 0 then return string.format("MA: %d", w1) end
+			return string.format("MA: %.2f", w1 / w2)
+		end
+	end
+	return "MA: 0.00"
+end
 
 local j =
 	Def.ActorFrame {
@@ -533,7 +571,7 @@ local j =
 			Movable.DeviceButton_p.element = self
 			Movable.DeviceButton_p.condition = enabledJudgeCounter
 		end
-		self:xy(MovableValues.JudgeCounterX, MovableValues.JudgeCounterY)
+		self:xy(SCREEN_CENTER_X + 160, SCREEN_BOTTOM - 100)
 	end,
 	OnCommand = function(self)
 		for i = 1, #jdgT do
@@ -585,6 +623,20 @@ for i = 1, #jdgT do
 	j[#j + 1] = makeJudgeText(jdgT[i], i)
 	j[#j + 1] = makeJudgeCount(jdgT[i], i)
 end
+
+-- MA Ratio
+j[#j + 1] = LoadFont("Common Normal") .. {
+	Name = "MARatio",
+	InitCommand = function(self)
+		self:xy(0, -frameHeight / 2 + ((#jdgT + 1) * spacing)):zoom(maFontSize):halign(0.5):settext("MA: 0.00")
+	end,
+	SpottedOffsetCommand = function(self)
+		self:settext(getMARatio())
+	end,
+	PracticeModeResetMessageCommand = function(self)
+		self:settext("MA: 0.00")
+	end
+}
 
 -- Now add the completed judgment table to the primary actor frame t if enabled
 if enabledJudgeCounter then

@@ -1,8 +1,18 @@
 local allowedCustomization = playerConfig:get_data(pn_to_profile_slot(PLAYER_1)).CustomizeGameplay
 local c
 local enabledCombo = playerConfig:get_data(pn_to_profile_slot(PLAYER_1)).ComboText
-local CenterCombo = CenteredComboEnabled()
+local CenterCombo = true
 local CTEnabled = ComboTweensEnabled()
+
+-- Track judgments in real-time (GetTapNoteScore not available during gameplay)
+local jdgTracker = {
+	w1 = 0,
+	w2 = 0,
+	w3 = 0,
+	w4 = 0,
+	w5 = 0,
+	miss = 0
+}
 
 
 local function numberZoom()
@@ -51,10 +61,19 @@ end
 
 local ShowComboAt = THEME:GetMetric("Combo", "ShowComboAt")
 local labelColor = getComboColor("ComboLabel")
-local mfcNumbers = getComboColor("Marv_FullCombo")
-local pfcNumbers = getComboColor("Perf_FullCombo")
-local fcNumbers = getComboColor("FullCombo")
-local regNumbers = getComboColor("RegularCombo")
+
+-- Clear type colors for combo (matching the theme's clear type system)
+local ctColors = colorConfig:get_data().clearType
+local mfcColor = color(ctColors.MFC)
+local wfColor = color(ctColors.WF)
+local sdpColor = color(ctColors.SDP)
+local pfcColor = color(ctColors.PFC)
+local bfColor = color(ctColors.BF)
+local sdgColor = color(ctColors.SDG)
+local fcColor = color(ctColors.FC)
+local mfColor = color(ctColors.MF)
+local sdcbColor = color(ctColors.SDCB)
+local clearColor = color(ctColors.Clear)
 
 local translated_combo = THEME:GetString("ScreenGameplay", "ComboText")
 
@@ -100,10 +119,17 @@ local t = Def.ActorFrame {
 		end
 	end,
 	OnCommand = function(self)
+		-- Reset judgment tracker for new song
+		jdgTracker.w1 = 0
+		jdgTracker.w2 = 0
+		jdgTracker.w3 = 0
+		jdgTracker.w4 = 0
+		jdgTracker.w5 = 0
+		jdgTracker.miss = 0
 		if (allowedCustomization) then
 			c.Number:visible(true)
 			c.Number:settext(1000)
-			c.Label:visible(not CenterCombo)
+			c.Label:visible(false) -- Permanently removed
 			c.Label:settext(translated_combo)
 
 			Movable.DeviceButton_3.propertyOffsets = {self:GetTrueX() -6, self:GetTrueY()}	-- centered to screen/valigned
@@ -121,35 +147,58 @@ local t = Def.ActorFrame {
 
 		c.Number:visible(true)
 		c.Number:settext(iCombo)
-		c.Label:visible(not CenterCombo)
-		c.Label:settext(translated_combo)
+		c.Label:visible(false) -- Permanently removed
 
-		-- FullCombo Rewards
-		if param.FullComboW1 then
-			c.Number:diffuse(mfcNumbers)
-			c.Number:glowshift()
-		elseif param.FullComboW2 then
-			c.Number:diffuse(pfcNumbers)
-			c.Number:glowshift()
-		elseif param.FullComboW3 then
-			c.Number:diffuse(fcNumbers)
-			c.Number:stopeffect()
-		elseif param.Combo then
-			c.Number:diffuse(regNumbers)
-			c.Number:stopeffect()
-			c.Label:diffuse(labelColor)
-			c.Label:diffusebottomedge(color("0.75,0.75,0.75,1"))
+		-- Color based on tracked judgment counts (updated via JudgmentMessageCommand)
+		local misscount = jdgTracker.w4 + jdgTracker.w5 + jdgTracker.miss
+		local greatcount = jdgTracker.w3
+		local perfcount = jdgTracker.w2
+		local w1count = jdgTracker.w1
+
+		if misscount > 0 then
+			if misscount == 1 then
+				-- MF: Miss Flag (1 miss/bad/shit)
+				c.Number:diffuse(mfColor)
+			elseif misscount > 1 and misscount < 10 then
+				-- SDCB: Single Digit Combo Break (2-9 misses)
+				c.Number:diffuse(sdcbColor)
+			else
+				-- Clear: 10+ misses (use white)
+				c.Number:diffuse(color("#FFFFFF"))
+			end
 		else
-			-- I actually don't know what this is.
-			-- It's probably for if you want to fade out the combo after a miss.
-			-- Oh well; Til death doesn't care.		-poco
-			c.Number:diffuse(color("#ff0000"))
-			c.Number:stopeffect()
-			c.Label:diffuse(Color("Red"))
-			c.Label:diffusebottomedge(color("0.5,0,0,1"))
+			-- No misses
+			if greatcount == 0 then
+				-- No misses, no greats - check perfects for MFC/WF/SDP/PFC
+				if perfcount == 0 and w1count > 0 then
+					-- MFC: Only W1s (no perfects, no greats, no misses)
+					c.Number:diffuse(mfcColor)
+				elseif perfcount == 1 then
+					-- WF: White Flag (1 perfect, rest W1s)
+					c.Number:diffuse(wfColor)
+				elseif perfcount > 1 and perfcount < 10 then
+					-- SDP: Single Digit Perfects (2-9 perfects)
+					c.Number:diffuse(sdpColor)
+				else
+					-- PFC: Perfect Full Combo (10+ perfects, no greats, no misses)
+					c.Number:diffuse(pfcColor)
+				end
+			else
+				-- No misses but has greats - check for BF/SDG/FC
+				if greatcount == 1 then
+					-- BF: Black Flag (1 great, any perfects, no misses)
+					c.Number:diffuse(bfColor)
+				elseif greatcount > 1 and greatcount < 10 then
+					-- SDG: Single Digit Greats (2-9 greats)
+					c.Number:diffuse(sdgColor)
+				else
+					-- FC: Full Combo (10+ greats, no misses)
+					c.Number:diffuse(fcColor)
+				end
+			end
 		end
 
-		--Animations
+		-- Animations
 		if CTEnabled then
 			local lb = 0.9
 			local ub = 1.1
@@ -160,6 +209,26 @@ local t = Def.ActorFrame {
 			param.Zoom = clamp( param.Zoom, lb, ub )
 			Pulse(c.Number, param)
 			PulseLabel(c.Label, param)
+		end
+	end,
+	JudgmentMessageCommand = function(self, params)
+		-- Track judgments for combo color calculation
+		if params.HoldNoteScore then return end -- Ignore holds
+		if params.TapNoteScore then
+			local tns = params.TapNoteScore
+			if tns == "TapNoteScore_W1" then
+				jdgTracker.w1 = jdgTracker.w1 + 1
+			elseif tns == "TapNoteScore_W2" then
+				jdgTracker.w2 = jdgTracker.w2 + 1
+			elseif tns == "TapNoteScore_W3" then
+				jdgTracker.w3 = jdgTracker.w3 + 1
+			elseif tns == "TapNoteScore_W4" then
+				jdgTracker.w4 = jdgTracker.w4 + 1
+			elseif tns == "TapNoteScore_W5" then
+				jdgTracker.w5 = jdgTracker.w5 + 1
+			elseif tns == "TapNoteScore_Miss" then
+				jdgTracker.miss = jdgTracker.miss + 1
+			end
 		end
 	end,
 	MovableBorder(0, 0, 1, MovableValues.ComboX, MovableValues.ComboY),

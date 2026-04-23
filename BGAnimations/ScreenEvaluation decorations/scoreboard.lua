@@ -251,12 +251,9 @@ local function scoreitem(pn, index, scoreIndex, drawindex)
 					self:settextf("NA (%s)", wstring)
 				else
 					local perc = hsTable[index]:GetWifeScore() * 100
-					if perc > 99.65 then
-						self:settextf("%05.4f%% (%s)", notShit.floor(perc, 4), wstring)
-					else
-						self:settextf("%05.2f%% (%s)", notShit.floor(perc, 2), wstring)
-					end
+					self:settextf("%06.3f%% (%s)", perc, wstring)
 				end
+				self:diffuse(getGradeColor(hsTable[index]:GetWifeGrade()))
 			end
 		},
 		--mods
