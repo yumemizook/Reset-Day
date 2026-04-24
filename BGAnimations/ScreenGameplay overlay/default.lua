@@ -9,7 +9,7 @@ end
 
 local t = Def.ActorFrame {}
 t[#t + 1] = LoadActor("WifeJudgmentSpotting")
-t[#t + 1] = LoadActor("titlesplash")
+t[#t + 1] = LoadActor("songintro")
 t[#t + 1] = LoadActor("leaderboard")
 if inReplay then
 	t[#t + 1] = LoadActor("replayscrolling")

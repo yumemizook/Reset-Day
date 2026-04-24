@@ -1,12 +1,18 @@
+-- Expanding triangle transition (out) - triangle expands to cover screen
 local t = Def.ActorFrame {}
 
---black fade
-t[#t + 1] = Def.Quad {
+t[#t + 1] = Def.ActorMultiVertex {
 	InitCommand = function(self)
-		self:xy(SCREEN_CENTER_X, SCREEN_CENTER_Y):zoomto(SCREEN_WIDTH, SCREEN_HEIGHT)
+		self:SetVertices({
+			{{0, -1, 0}, color("0,0,0,1")},    -- top point
+			{{-1, 1, 0}, color("0,0,0,1")},   -- bottom left
+			{{1, 1, 0}, color("0,0,0,1")}     -- bottom right
+		})
+		self:SetDrawState {Mode = "DrawMode_Triangles"}
+		self:xy(SCREEN_CENTER_X, SCREEN_CENTER_Y):zoom(0)
 	end,
 	OnCommand = function(self)
-		self:diffuse(color("0,0,0,0")):sleep(0.1):linear(0.1):diffusealpha(1)
+		self:sleep(0.05):linear(0.25):zoom(SCREEN_HEIGHT * 1.5)
 	end
 }
 

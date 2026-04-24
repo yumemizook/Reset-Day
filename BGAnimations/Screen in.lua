@@ -1,8 +1,16 @@
-return Def.Quad {
+-- Expanding triangle transition (in) - triangle shrinks to reveal new screen
+return Def.ActorMultiVertex {
 	InitCommand = function(self)
-		self:xy(SCREEN_CENTER_X, SCREEN_CENTER_Y):zoomto(SCREEN_WIDTH, SCREEN_HEIGHT)
+		local size = SCREEN_HEIGHT * 3
+		self:SetVertices({
+			{{0, -size, 0}, color("0,0,0,1")},      -- top point
+			{{-size, size, 0}, color("0,0,0,1")},   -- bottom left
+			{{size, size, 0}, color("0,0,0,1")}     -- bottom right
+		})
+		self:SetDrawState {Mode = "DrawMode_Triangles"}
+		self:xy(SCREEN_CENTER_X, SCREEN_CENTER_Y)
 	end,
 	OnCommand = function(self)
-		self:diffuse(color("0,0,0,1")):sleep(0.1):linear(0.1):diffusealpha(0)
+		self:sleep(0.05):linear(0.25):zoom(0)
 	end
 }
