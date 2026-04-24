@@ -101,6 +101,130 @@ local function getPrimaryButtonText()
 	return "Leaderboard"
 end
 
+local leaderboardSortModes = {"accuracy", "ssr", "time"}
+
+local function getLeaderboardSortMode()
+	local stored = getenv("MusicSelectLeaderboardSortMode")
+	for _, mode in ipairs(leaderboardSortModes) do
+		if stored == mode then
+			return mode
+		end
+	end
+	return "accuracy"
+end
+
+local function getLeaderboardSortModeLabel()
+	local mode = getLeaderboardSortMode()
+	if mode == "ssr" then
+		return "SSR"
+	elseif mode == "time" then
+		return "Time"
+	end
+	return "Accuracy"
+end
+
+local function setLeaderboardSortMode(mode)
+	setenv("MusicSelectLeaderboardSortMode", mode)
+	MESSAGEMAN:Broadcast("MusicSelectLeaderboardSortChanged", {mode = mode})
+end
+
+local function cycleLeaderboardSortMode()
+	local currentMode = getLeaderboardSortMode()
+	for index, mode in ipairs(leaderboardSortModes) do
+		if mode == currentMode then
+			setLeaderboardSortMode(leaderboardSortModes[(index % #leaderboardSortModes) + 1])
+			return
+		end
+	end
+	setLeaderboardSortMode(leaderboardSortModes[1])
+end
+
+local function getOnlineCurrentRateOnly()
+	local stored = getenv("MusicSelectOnlineCurrentRateOnly")
+	if stored == nil then
+		return false
+	end
+	return stored == true
+end
+
+local function getOnlineRateFilterLabel()
+	if getOnlineCurrentRateOnly() then
+		return "Current Rate"
+	end
+	return "All rates"
+end
+
+local function toggleOnlineRateFilter()
+	local currentRateOnly = not getOnlineCurrentRateOnly()
+	setenv("MusicSelectOnlineCurrentRateOnly", currentRateOnly)
+	if DLMAN and DLMAN.ToggleRateFilter then
+		DLMAN:ToggleRateFilter()
+	end
+	MESSAGEMAN:Broadcast("MusicSelectOnlineRateFilterChanged", {currentRateOnly = currentRateOnly})
+end
+
+local function getScoreDateValue(scoreObject)
+	if not scoreObject then return 0 end
+	local dateStr = scoreObject:GetDate()
+	if not dateStr or dateStr == "" then return 0 end
+	local y, m, d, h, min, s = dateStr:match("(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)")
+	if not y then return 0 end
+	return os.time({year=tonumber(y), month=tonumber(m), day=tonumber(d), hour=tonumber(h), min=tonumber(min), sec=tonumber(s)}) or 0
+end
+
+local function getScoreOverallSsr(scoreObject)
+	if not scoreObject then return 0 end
+	return scoreObject:GetSkillsetSSR("Overall") or 0
+end
+
+local function sortLeaderboardScores(scores)
+	if not scores then return end
+	table.sort(scores, function(left, right)
+		if not left then return false end
+		if not right then return true end
+		local mode = getLeaderboardSortMode()
+		local leftAcc = left:GetWifeScore() or 0
+		local rightAcc = right:GetWifeScore() or 0
+		local leftSsr = getScoreOverallSsr(left)
+		local rightSsr = getScoreOverallSsr(right)
+		local leftDate = getScoreDateValue(left)
+		local rightDate = getScoreDateValue(right)
+		if mode == "ssr" then
+			if leftSsr == rightSsr then
+				if leftAcc == rightAcc then
+					if leftDate == rightDate then
+						return (left:GetDisplayName() or "") < (right:GetDisplayName() or "")
+					end
+					return leftDate > rightDate
+				end
+				return leftAcc > rightAcc
+			end
+			return leftSsr > rightSsr
+		elseif mode == "time" then
+			if leftDate == rightDate then
+				if leftAcc == rightAcc then
+					if leftSsr == rightSsr then
+						return (left:GetDisplayName() or "") < (right:GetDisplayName() or "")
+					end
+					return leftSsr > rightSsr
+				end
+				return leftAcc > rightAcc
+			end
+			return leftDate > rightDate
+		end
+		if leftAcc == rightAcc then
+			if leftSsr == rightSsr then
+				if leftDate == rightDate then
+					return (left:GetDisplayName() or "") < (right:GetDisplayName() or "")
+				end
+				return leftDate > rightDate
+			end
+			return leftSsr > rightSsr
+		end
+		return leftAcc > rightAcc
+	end)
+end
+
 local function averageValues(values)
 	if not values or #values == 0 then return nil end
 	local sum = 0
@@ -236,6 +360,7 @@ local o = Def.ActorFrame {
 	GetFilteredLeaderboardCommand = function(self)
 		if GAMESTATE:GetCurrentSong() then
 			scoretable = DLMAN:GetChartLeaderBoard(GAMESTATE:GetCurrentSteps():GetChartKey(), currentCountry)
+			sortLeaderboardScores(scoretable)
 			ind = 0
 			self:playcommand("Update")
 		end
@@ -251,6 +376,15 @@ local o = Def.ActorFrame {
 			activeNestedTab = params.tab
 			self:playcommand("Update")
 		end
+	end,
+	MusicSelectLeaderboardSortChangedMessageCommand = function(self)
+		ind = 0
+		sortLeaderboardScores(scoretable)
+		self:playcommand("Update")
+	end,
+	MusicSelectOnlineRateFilterChangedMessageCommand = function(self)
+		ind = 0
+		self:playcommand("GetFilteredLeaderboard")
 	end,
 	SetDynamicAccentColorMessageCommand = function(self, params)
 		-- Store and apply accent color
@@ -487,7 +621,7 @@ local o = Def.ActorFrame {
 		InitCommand = function(self)
 			self:xy(width * 0.8, 15):zoom(0.4):halign(0.5):valign(0.5)
 			self:diffuse(getMainColor("positive"))
-			self:settext("No filter")
+			self:settext(getOnlineRateFilterLabel())
 		end,
 		MouseOverCommand = function(self)
 			self:diffusealpha(hoverAlpha)
@@ -497,15 +631,17 @@ local o = Def.ActorFrame {
 		end,
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" then
-				DLMAN:ToggleRateFilter()
-				ind = 0
-				self:GetParent():queuecommand("GetFilteredLeaderboard")
+				toggleOnlineRateFilter()
 			end
 		end,
 		UpdateCommand = function(self)
+			self:settext(getOnlineRateFilterLabel())
 			self:visible(activeNestedTab == 2)
 		end,
 		NestedTabChangedMessageCommand = function(self)
+			self:playcommand("Update")
+		end,
+		MusicSelectOnlineRateFilterChangedMessageCommand = function(self)
 			self:playcommand("Update")
 		end
 	},
@@ -514,7 +650,7 @@ local o = Def.ActorFrame {
 		InitCommand = function(self)
 			self:xy(width / 2, 15):zoom(0.4):halign(0.5):valign(0.5)
 			self:diffuse(getMainColor("positive"))
-			self:settext("Accuracy")
+			self:settext(getLeaderboardSortModeLabel())
 		end,
 		MouseOverCommand = function(self)
 			self:diffusealpha(hoverAlpha)
@@ -524,13 +660,17 @@ local o = Def.ActorFrame {
 		end,
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" then
-				-- Sort logic
+				cycleLeaderboardSortMode()
 			end
 		end,
 		UpdateCommand = function(self)
+			self:settext(getLeaderboardSortModeLabel())
 			self:visible(activeNestedTab == 2)
 		end,
 		NestedTabChangedMessageCommand = function(self)
+			self:playcommand("Update")
+		end,
+		MusicSelectLeaderboardSortChangedMessageCommand = function(self)
 			self:playcommand("Update")
 		end
 	},
@@ -605,7 +745,7 @@ local function makeScoreDisplay(i)
 			end,
 			DisplayCommand = function(self)
 				local perc = hs:GetWifeScore() * 100
-				local percStr = string.format(perc > 99.65 and "%.4f%%" or "%.2f%%", perc)
+				local percStr = string.format(perc >= 99.7 and "%.4f%%" or "%.2f%%", perc)
 				self:settextf("#%i %s · %s", i + ind, hs:GetDisplayName(), percStr)
 				self:diffuse(getGradeColor(hs:GetWifeGrade()))
 			end

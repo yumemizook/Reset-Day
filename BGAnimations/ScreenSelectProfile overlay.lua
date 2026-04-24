@@ -303,13 +303,13 @@ t[#t + 1] = Def.ActorFrame {
 t[#t + 1] = LoadActor("_frame")
 t[#t + 1] = LoadFont("Common Large") .. {
 	InitCommand = function(self)
-		self:xy(5, 32):halign(0):valign(1):zoom(0.55):diffuse(getMainColor("positive"))
+		self:xy(5, 42):halign(0):valign(1):zoom(0.55):diffuse(getMainColor("positive"))
 		self:settextf("%s:", translated_info["Title"])
 	end
 }
 t[#t+1] = LoadFont("Common Large") .. {
 	InitCommand = function(self)
-		self:xy(5, SCREEN_HEIGHT-21)
+		self:xy(5, SCREEN_HEIGHT - 42)
 		self:halign(0):valign(0):zoom(0.35):diffuse(getMainColor("positive"))
 		self:settextf("%s: %s", translated_info["Gamemode"], GAMESTATE:GetCurrentGame():GetName())
 	end,

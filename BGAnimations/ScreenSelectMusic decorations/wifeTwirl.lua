@@ -814,7 +814,11 @@ t[#t + 1] = Def.ActorFrame {
 					self:settext("--"):diffuse(color("#666666"))
 				elseif score then
 					local perc = score:GetWifeScore() * 100
-					self:settextf("%.2f%% [%s]", perc, getJudgeLabel(score))
+					if perc >= 99.7 then
+						self:settextf("%.4f%% [%s]", perc, getJudgeLabel(score))
+					else
+						self:settextf("%.2f%% [%s]", perc, getJudgeLabel(score))
+					end
 					self:diffuse(byGrade(score:GetWifeGrade()))
 				else
 					self:settext("--"):diffuse(color("#666666"))

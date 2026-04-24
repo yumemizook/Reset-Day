@@ -126,6 +126,141 @@ local function getCurrentRateScores()
 	return nil
 end
 
+local leaderboardSortModes = {"accuracy", "ssr", "time"}
+
+local function getLeaderboardSortMode()
+	local stored = getenv("MusicSelectLeaderboardSortMode")
+	for _, mode in ipairs(leaderboardSortModes) do
+		if stored == mode then
+			return mode
+		end
+	end
+	return "accuracy"
+end
+
+local function getLeaderboardSortModeLabel()
+	local mode = getLeaderboardSortMode()
+	if mode == "ssr" then
+		return "SSR"
+	elseif mode == "time" then
+		return "Time"
+	end
+	return "Accuracy"
+end
+
+local function setLeaderboardSortMode(mode)
+	setenv("MusicSelectLeaderboardSortMode", mode)
+	MESSAGEMAN:Broadcast("MusicSelectLeaderboardSortChanged", {mode = mode})
+end
+
+local function cycleLeaderboardSortMode()
+	local currentMode = getLeaderboardSortMode()
+	for index, mode in ipairs(leaderboardSortModes) do
+		if mode == currentMode then
+			setLeaderboardSortMode(leaderboardSortModes[(index % #leaderboardSortModes) + 1])
+			return
+		end
+	end
+	setLeaderboardSortMode(leaderboardSortModes[1])
+end
+
+local function getLocalCurrentRateOnly()
+	local stored = getenv("MusicSelectLocalCurrentRateOnly")
+	if stored == nil then
+		return true
+	end
+	return stored == true
+end
+
+local function getLocalRateFilterLabel()
+	if getLocalCurrentRateOnly() then
+		return "Current Rate"
+	end
+	return "All rates"
+end
+
+local function toggleLocalRateFilter()
+	local currentRateOnly = not getLocalCurrentRateOnly()
+	setenv("MusicSelectLocalCurrentRateOnly", currentRateOnly)
+	MESSAGEMAN:Broadcast("MusicSelectLocalRateFilterChanged", {currentRateOnly = currentRateOnly})
+end
+
+local function getScoreDateValue(scoreObject)
+	if not scoreObject then return 0 end
+	local dateStr = scoreObject:GetDate()
+	if not dateStr or dateStr == "" then return 0 end
+	local y, m, d, h, min, s = dateStr:match("(%d+)-(%d+)-(%d+) (%d+):(%d+):(%d+)")
+	if not y then return 0 end
+	return os.time({year=tonumber(y), month=tonumber(m), day=tonumber(d), hour=tonumber(h), min=tonumber(min), sec=tonumber(s)}) or 0
+end
+
+local function getScoreOverallSsr(scoreObject)
+	if not scoreObject then return 0 end
+	return scoreObject:GetSkillsetSSR("Overall") or 0
+end
+
+local function getAllRateScores()
+	if not rtTable then return nil end
+	local scores = {}
+	for _, rateScores in pairs(rtTable) do
+		for i = 1, #rateScores do
+			scores[#scores + 1] = rateScores[i]
+		end
+	end
+	return scores
+end
+
+local function getSortedScoreCopy(scores)
+	if not scores then return nil end
+	local sortedScores = {}
+	for i = 1, #scores do
+		sortedScores[i] = scores[i]
+	end
+	table.sort(sortedScores, function(left, right)
+		if not left then return false end
+		if not right then return true end
+		local mode = getLeaderboardSortMode()
+		local leftAcc = left:GetWifeScore() or 0
+		local rightAcc = right:GetWifeScore() or 0
+		local leftSsr = getScoreOverallSsr(left)
+		local rightSsr = getScoreOverallSsr(right)
+		local leftDate = getScoreDateValue(left)
+		local rightDate = getScoreDateValue(right)
+		if mode == "ssr" then
+			if leftSsr == rightSsr then
+				if leftAcc == rightAcc then
+					return leftDate > rightDate
+				end
+				return leftAcc > rightAcc
+			end
+			return leftSsr > rightSsr
+		elseif mode == "time" then
+			if leftDate == rightDate then
+				if leftAcc == rightAcc then
+					return leftSsr > rightSsr
+				end
+				return leftAcc > rightAcc
+			end
+			return leftDate > rightDate
+		end
+		if leftAcc == rightAcc then
+			if leftSsr == rightSsr then
+				return leftDate > rightDate
+			end
+			return leftSsr > rightSsr
+		end
+		return leftAcc > rightAcc
+	end)
+	return sortedScores
+end
+
+local function getDisplayedScores()
+	if getLocalCurrentRateOnly() then
+		return getSortedScoreCopy(getCurrentRateScores())
+	end
+	return getSortedScoreCopy(getAllRateScores())
+end
+
 local moped
 -- Only works if ... it should work
 -- You know, if we can see the place where the scores should be.
@@ -264,16 +399,16 @@ local cheese
 -- eats only inputs that would scroll to a new score
 local function input(event)
 	if isOver(cheese:GetChild("FrameDisplay")) then
-		local currentRateScores = getCurrentRateScores()
+		local displayedScores = getDisplayedScores()
 		if event.DeviceInput.button == "DeviceButton_mousewheel up" and event.type == "InputEventType_FirstPress" then
-			if nestedTab == 1 and currentRateScores ~= nil then
+			if nestedTab == 1 and displayedScores ~= nil then
 				scoreOffset = math.max(0, scoreOffset - 1)
 				cheese:playcommand("Display")
 				return true
 			end
 		elseif event.DeviceInput.button == "DeviceButton_mousewheel down" and event.type == "InputEventType_FirstPress" then
-			if nestedTab == 1 and currentRateScores ~= nil then
-				local maxOffset = math.max(0, #currentRateScores - 5)
+			if nestedTab == 1 and displayedScores ~= nil then
+				local maxOffset = math.max(0, #displayedScores - 5)
 				scoreOffset = math.min(maxOffset, scoreOffset + 1)
 				cheese:playcommand("Display")
 				return true
@@ -328,9 +463,19 @@ local t = Def.ActorFrame {
 			self:playcommand("Display")
 		end
 	end,
+	MusicSelectLeaderboardSortChangedMessageCommand = function(self)
+		scoreIndex = 1
+		scoreOffset = 0
+		self:playcommand("Display")
+	end,
+	MusicSelectLocalRateFilterChangedMessageCommand = function(self)
+		scoreIndex = 1
+		scoreOffset = 0
+		self:playcommand("Display")
+	end,
 	CodeMessageCommand = function(self, params)
-		local currentRateScores = getCurrentRateScores()
-		if nestedTab == 1 and currentRateScores ~= nil then
+		local displayedScores = getDisplayedScores()
+		if nestedTab == 1 and displayedScores ~= nil then
 			if params.Name == "NextScore" then
 				self:queuecommand("NextScore")
 			elseif params.Name == "PrevScore" then
@@ -339,25 +484,25 @@ local t = Def.ActorFrame {
 		end
 	end,
 	NextScoreCommand = function(self)
-		local currentRateScores = getCurrentRateScores()
-		if currentRateScores ~= nil then
-			scoreIndex = ((scoreIndex) % (#currentRateScores)) + 1
+		local displayedScores = getDisplayedScores()
+		if displayedScores ~= nil then
+			scoreIndex = ((scoreIndex) % (#displayedScores)) + 1
 			self:queuecommand("Display")
 		end
 	end,
 	PrevScoreCommand = function(self)
-		local currentRateScores = getCurrentRateScores()
-		if currentRateScores ~= nil then
-			scoreIndex = ((scoreIndex - 2) % (#currentRateScores)) + 1
+		local displayedScores = getDisplayedScores()
+		if displayedScores ~= nil then
+			scoreIndex = ((scoreIndex - 2) % (#displayedScores)) + 1
 			self:queuecommand("Display")
 		end
 	end,
 	DisplayCommand = function(self)
-		local currentRateScores = getCurrentRateScores()
-		if currentRateScores ~= nil then
-			scoreIndex = math.min(math.max(scoreIndex, 1), #currentRateScores)
-			scoreOffset = math.min(math.max(scoreOffset, 0), math.max(0, #currentRateScores - 5))
-			score = currentRateScores[scoreIndex]
+		local displayedScores = getDisplayedScores()
+		if displayedScores ~= nil then
+			scoreIndex = math.min(math.max(scoreIndex, 1), #displayedScores)
+			scoreOffset = math.min(math.max(scoreOffset, 0), math.max(0, #displayedScores - 5))
+			score = displayedScores[scoreIndex]
 			if score then
 				hasReplayData = score:HasReplayData()
 				setScoreForPlot(score)
@@ -408,6 +553,13 @@ local function topBarButton(name, x, width, text, cmd, activeFunc)
 			self:xy(x, 15):zoom(0.45):halign(0.5):settext(text)
 		end,
 		UpdateCommand = function(self)
+			if name == "YourScoresBtn" then
+				self:settext(getNestedTabButtonText())
+			elseif name == "PerformanceBtn" then
+				self:settext(getLeaderboardSortModeLabel())
+			elseif name == "FilterBtn" then
+				self:settext(getLocalRateFilterLabel())
+			end
 			if activeFunc and activeFunc() then
 				self:diffuse(getMainColor("highlight"))
 			else
@@ -422,9 +574,12 @@ local function topBarButton(name, x, width, text, cmd, activeFunc)
 		end,
 		TopBarUpdateMessageCommand = function(self) self:playcommand("Update") end,
 		NestedTabChangedMessageCommand = function(self)
-			if name == "YourScoresBtn" then
-				self:settext(getNestedTabButtonText())
-			end
+			self:playcommand("Update")
+		end,
+		MusicSelectLeaderboardSortChangedMessageCommand = function(self)
+			self:playcommand("Update")
+		end,
+		MusicSelectLocalRateFilterChangedMessageCommand = function(self)
 			self:playcommand("Update")
 		end,
 		MouseOverCommand = function(self) self:diffusealpha(hoverAlpha) end,
@@ -436,12 +591,12 @@ t[#t + 1] = topBarButton("YourScoresBtn", frameWidth * 0.2, 100, "Your scores", 
 	cycleNestedTab()
 end, function() return nestedTab == 1 end)
 
-t[#t + 1] = topBarButton("PerformanceBtn", frameWidth * 0.5, 100, "Performance", function()
-	-- Sort logic
+t[#t + 1] = topBarButton("PerformanceBtn", frameWidth * 0.5, 100, "Accuracy", function()
+	cycleLeaderboardSortMode()
 end, function() return true end)
 
-t[#t + 1] = topBarButton("FilterBtn", frameWidth * 0.8, 100, "No filter", function()
-	-- Rate filter logic
+t[#t + 1] = topBarButton("FilterBtn", frameWidth * 0.8, 100, "Current Rate", function()
+	toggleLocalRateFilter()
 end, function() return true end)
 
 local l = Def.ActorFrame {
@@ -467,9 +622,9 @@ local l = Def.ActorFrame {
 					end,
 				},
 					DisplayCommand = function(self)
-					local currentRateScores = getCurrentRateScores()
-					if currentRateScores ~= nil then
-						score = currentRateScores[i + scoreOffset]
+					local displayedScores = getDisplayedScores()
+					if displayedScores ~= nil then
+						score = displayedScores[i + scoreOffset]
 						if score then
 							self:visible(true)
 							self:playcommand("SetScore")
@@ -502,7 +657,7 @@ local l = Def.ActorFrame {
 						if j < 4 then j = 4 end
 						local jStr = " [J" .. j .. "]"
 						
-						if perc > 99.65 then
+						if perc >= 99.7 then
 							self:settextf("%.4f%%%s", perc, jStr):diffuse(getGradeColor(score:GetWifeGrade()))
 						else
 							self:settextf("%.2f%%%s", perc, jStr):diffuse(getGradeColor(score:GetWifeGrade()))

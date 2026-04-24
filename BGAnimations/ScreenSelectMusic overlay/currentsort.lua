@@ -28,6 +28,38 @@ local sortTable = {
 	SortOrder_Ungrouped = THEME:GetString("SortOrder", "Ungrouped")
 }
 
+local groupSortCycle = {
+	"SortOrder_Group",
+	"SortOrder_Title",
+	"SortOrder_Artist",
+	"SortOrder_Genre",
+	"SortOrder_BPM",
+	"SortOrder_Length",
+	"SortOrder_DateAdded",
+	"SortOrder_Favorites",
+	"SortOrder_Author",
+	"SortOrder_Ungrouped"
+}
+
+local function getCurrentGroupSortLabel()
+	local sort = GAMESTATE:GetSortOrder()
+	return sortTable[sort] or tostring(sort or "Group")
+end
+
+local function cycleGroupSort(top)
+	if not top or not top.GetMusicWheel then return end
+	local wheel = top:GetMusicWheel()
+	if not wheel or not wheel.ChangeSort then return end
+	local currentSort = GAMESTATE:GetSortOrder()
+	for index, sortType in ipairs(groupSortCycle) do
+		if sortType == currentSort then
+			wheel:ChangeSort(groupSortCycle[(index % #groupSortCycle) + 1])
+			return
+		end
+	end
+	wheel:ChangeSort(groupSortCycle[1])
+end
+
 local sortY = 100
 local sortX = SCREEN_WIDTH - 200
 
@@ -41,35 +73,24 @@ t[#t + 1] = Def.Quad {
 	end
 }
 
-t[#t + 1] = LoadFont("Common Normal") .. {
-	InitCommand = function(self)
-		self:xy(SCREEN_WIDTH - 275, sortY):halign(0):zoom(0.4):settext("Sort:")
-		self:diffuse(color("#888888"))
-	end
-}
-
-local function makeSortButton(label, sortType, xOffset)
+local function makeGroupButton(xOffset)
 	return UIElements.TextToolTip(1, 1, "Common Normal") .. {
 		InitCommand = function(self)
-			self:xy(SCREEN_WIDTH + xOffset, sortY):halign(0):zoom(0.4):settext(label)
+			self:xy(SCREEN_WIDTH + xOffset, sortY):halign(0):zoom(0.4):settext("")
 		end,
 		BeginCommand = function(self)
 			self:queuecommand("Set")
 		end,
 		SetCommand = function(self)
-			local sort = GAMESTATE:GetSortOrder()
-			if sort == sortType then
-				self:diffuse(getMainColor("positive"))
-			else
-				self:diffuse(color("#FFFFFF"))
-			end
+			self:settext("Group: " .. getCurrentGroupSortLabel())
+			self:diffuse(getMainColor("positive"))
 		end,
 		SortOrderChangedMessageCommand = function(self)
 			self:queuecommand("Set")
 		end,
 		MouseDownCommand = function(self, params)
 			if params.event == "DeviceButton_left mouse button" then
-				SCREENMAN:GetTopScreen():GetMusicWheel():ChangeSort(sortType)
+				cycleGroupSort(SCREENMAN:GetTopScreen())
 			end
 		end,
 		MouseOverCommand = function(self)
@@ -81,8 +102,6 @@ local function makeSortButton(label, sortType, xOffset)
 	}
 end
 
-t[#t + 1] = makeSortButton("Title ⌄", "SortOrder_Title", -240)
-t[#t + 1] = makeSortButton("Group:", "SortOrder_Group", -160)
-t[#t + 1] = makeSortButton("Pack ⌃", "SortOrder_Group", -80)
+t[#t + 1] = makeGroupButton(-240)
 
 return t
